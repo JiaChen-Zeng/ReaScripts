@@ -1,6 +1,6 @@
 -- @descrption MIDI Mixer Controller
--- @author: Jiachen
--- @version: 1.0.0
+-- @author Jiachen
+-- @version 1.0.0
 
 function get_midi_device_index_by_name(name)
     local n = reaper.GetNumMIDIInputs()

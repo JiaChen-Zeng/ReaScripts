@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Jiachen Scripts" commit="0993ad0f03dfc4144d2c3ba44aa5a5e493447884">
+<index version="1" name="Jiachen Scripts" commit="ff11cb24c183ebaa5cbae4ed41c0f95a47c7e35c">
+  <category name="Item">
+    <reapack name="jiachen_Make selected tracks loopable within time selection.lua" type="script" desc="Make selected tracks loopable within time selection">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Split the items that span the start and the end of the time selection, and move the part outsides to the inside at the other end of the time selection.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0.0" author="Jiachen" time="2024-09-25T01:14:37Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/ff11cb24c183ebaa5cbae4ed41c0f95a47c7e35c/Item/jiachen_Make%20selected%20tracks%20loopable%20within%20time%20selection.lua</source>
+      </version>
+    </reapack>
+  </category>
   <category name="Playground">
     <reapack name="jiachen_test reapack.lua" type="script" desc="Test ReaPack">
       <metadata>
@@ -19,22 +35,6 @@ Test the link to my repo
       </version>
     </reapack>
   </category>
-  <category name="Region">
-    <reapack name="jiachen_Make Region Loopable.lua" type="script" desc="Make region Loopable">
-      <metadata>
-        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
-{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
-\widowctrl\hyphauto
-
-{\pard \ql \f0 \sa180 \li0 \fi0 Split the items that span the start and the end of the region, and move the part outsides to the inside at the other end of the region.\par}
-}
-]]></description>
-      </metadata>
-      <version name="1.0.0" author="Jiachen" time="2024-09-24T10:02:36Z">
-        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/0993ad0f03dfc4144d2c3ba44aa5a5e493447884/Region/jiachen_Make%20Region%20Loopable.lua</source>
-      </version>
-    </reapack>
-  </category>
   <category name="System">
     <reapack name="jiachen_Mixer MIDI Controller.lua" type="script">
       <version name="1.0.0" author="Jiachen" time="2024-09-24T08:48:07Z">
@@ -47,7 +47,7 @@ Test the link to my repo
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 Reaper scripts for my personal use.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Reaper scripts for my personal use. Free to use for all purposes. No warranty.\par}
 }
 ]]></description>
   </metadata>

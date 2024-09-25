@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Jiachen Scripts" commit="f0631bd7cc81df02e8a8ee35d245fb2b1047654a">
+<index version="1" name="Jiachen Scripts" commit="e6200cbfe820e368147969085eb2244c506fdefa">
   <category name="Item">
     <reapack name="jiachen_Make selected tracks loopable within time selection.lua" type="script" desc="Make selected tracks loopable within time selection">
       <metadata>
@@ -10,12 +10,16 @@
 {\pard \ql \f0 \sa180 \li0 \fi0 Split the items that span the start and the end of the time selection, and move the part outsides to the inside at the other end of the time selection.\par}
 }
 ]]></description>
+        <link rel="screenshot">https://github.com/JiaChen-Zeng/ReaScripts/Item/Make%20selected%20tracks%20loopable%20within%20time%20selection.webp</link>
       </metadata>
       <version name="1.0.0" author="Jiachen" time="2024-09-25T01:14:37Z">
         <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/ff11cb24c183ebaa5cbae4ed41c0f95a47c7e35c/Item/jiachen_Make%20selected%20tracks%20loopable%20within%20time%20selection.lua</source>
       </version>
       <version name="1.0.1" author="Jiachen" time="2024-09-25T01:20:39Z">
         <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/f0631bd7cc81df02e8a8ee35d245fb2b1047654a/Item/jiachen_Make%20selected%20tracks%20loopable%20within%20time%20selection.lua</source>
+      </version>
+      <version name="1.0.2" author="Jiachen" time="2024-09-25T01:25:33Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/e6200cbfe820e368147969085eb2244c506fdefa/Item/jiachen_Make%20selected%20tracks%20loopable%20within%20time%20selection.lua</source>
       </version>
     </reapack>
   </category>

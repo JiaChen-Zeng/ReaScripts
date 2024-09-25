@@ -1,14 +1,18 @@
--- @description Make region Loopable
+-- @description Make selected tracks loopable within time selection 
 -- @author Jiachen
 -- @version 1.0.0
+-- @sceenshot https://github.com/JiaChen-Zeng/ReaScripts/Item/Make%20selected%20tracks%20loopable%20within%20time%20selection.webp
 -- @about
---    Split the items that span the start and the end of the region, and move the part outsides to the inside at the other end of the region.
+--    Split the items that span the start and the end of the time selection, and move the part outsides to the inside at the other end of the time selection.
+
+local current_project = reaper.EnumProjects(-1)
 
 -- Get the start and end of the time selection
 local start_time, end_time = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
 
 -- Begin undo block
-reaper.Undo_BeginBlock()
+reaper.Undo_BeginBlock2(current_project)
+reaper.PreventUIRefresh(1)
 
 -- Function to remove fades from an item
 local function removeFades(item)
@@ -90,7 +94,8 @@ end
 processSelectedTracks()
 
 -- End undo block
-reaper.Undo_EndBlock("Make selected range loopable", -1)
+reaper.PreventUIRefresh(-1)
+reaper.Undo_EndBlock2(current_project, "jiachen_Make selected tracks loopable within time selection", -1)
 
 -- Update the arrange view
 reaper.UpdateArrange()

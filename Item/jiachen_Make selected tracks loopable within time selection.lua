@@ -1,9 +1,11 @@
 -- @description Make selected tracks loopable within time selection 
 -- @author Jiachen
--- @version 1.0.4
+-- @version 1.0.5
 -- @screenshot https://raw.githubusercontent.com/JiaChen-Zeng/ReaScripts/refs/heads/master/Item/jiachen_Make%20selected%20tracks%20loopable%20within%20time%20selection.gif
 -- @about
 --    Split the items that span the start and the end of the time selection, and move the part outsides to the inside at the other end of the time selection.
+--    
+--    ![screenshot](https://raw.githubusercontent.com/JiaChen-Zeng/ReaScripts/refs/heads/master/Item/jiachen_Make%20selected%20tracks%20loopable%20within%20time%20selection.gif)
 
 local current_project = reaper.EnumProjects(-1)
 

@@ -1,7 +1,7 @@
 -- @description Make selected tracks loopable within time selection 
 -- @author Jiachen
--- @version 1.0.2
--- @screenshot https://github.com/JiaChen-Zeng/ReaScripts/Item/Make%20selected%20tracks%20loopable%20within%20time%20selection.webp
+-- @version 1.0.3
+-- @screenshot https://raw.githubusercontent.com/JiaChen-Zeng/ReaScripts/refs/heads/master/Item/jiachen_Make%20selected%20tracks%20loopable%20within%20time%20selection.webp
 -- @about
 --    Split the items that span the start and the end of the time selection, and move the part outsides to the inside at the other end of the time selection.
 

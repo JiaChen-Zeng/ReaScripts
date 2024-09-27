@@ -262,21 +262,6 @@ end
 
 -- MIDI Processing Start
 
-local instance_id
-local InstanceId = { }
-
-function InstanceId.get()
-  return reaper.GetExtState("jiachen_MIDI Mixer Controller", "newest_instance_id")
-end
-
-function InstanceId.set(value)
-  return reaper.SetExtState("jiachen_MIDI Mixer Controller", "newest_instance_id", value, true)
-end
-
-function InstanceId.generate()
-  return tostring(reaper.time_precise())
-end
-
 function process_midi_messages(device_to_monitor, channel_to_monitor)
   local last_history_index = reaper.MIDI_GetRecentInputEvent(0)
   local function run_forever()
@@ -293,9 +278,6 @@ function process_midi_messages(device_to_monitor, channel_to_monitor)
 
       local message_type = status & 0xF0
       if message_type == 0xB0 then -- Control Change message
-        if InstanceId.get() ~= instance_id then -- new instance started
-          return -- stop this instance completely
-        end
       
         local cc_number = string.byte(data, 2)
         local cc_value = string.byte(data, 3)
@@ -307,19 +289,13 @@ function process_midi_messages(device_to_monitor, channel_to_monitor)
 
     last_history_index = history_index
     
-    if not terminating then
-      reaper.defer(run_forever)
-    end
+    reaper.defer(run_forever)
   end
 
   run_forever()
 end
 
 function main()
-  instance_id = InstanceId.generate()
-  InstanceId.set(instance_id) -- notify other instances to stop
-  
-  -- fine to run simultaneously just for a very brief moment
   process_midi_messages(DEVICE_TO_MONITOR, CHANNEL_TO_MONITOR)
 end
 

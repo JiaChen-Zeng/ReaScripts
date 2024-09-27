@@ -216,6 +216,10 @@ function process_mixing_control(controller, cc, cc_value)
   local actions = get_actions_by_value(controller, cc, cc_value)
   if actions == nil then return end
   
+  -- Deal with the case where mixer project is in the background
+  local current_project = reaper.EnumProjects(-1)
+  reaper.SelectProjectInstance(this_project)
+  
   local saved_before = reaper.IsProjectDirty()
   reaper.Undo_BeginBlock2(this_project)
   reaper.PreventUIRefresh(1)
@@ -231,6 +235,8 @@ function process_mixing_control(controller, cc, cc_value)
   if saved_before then
     reaper.Main_SaveProject(this_project, false)
   end
+  
+  reaper.SelectProjectInstance(current_project)
 end
 
 -- MIDI Processing Start

@@ -97,6 +97,24 @@ function to_map(min, max)
   error("to_map: Invalid Arguments: " .. min .. ", " .. max)
 end
 
+function to_send(receive_track_name, send)
+  return function(track)
+    local receive_track = get_track_by_name(receive_track_name)
+    local send_count = reaper.GetTrackNumSends(track, 0)
+    for i = 0, send_count - 1 do
+      local dest_track = reaper.BR_GetMediaTrackSendInfo_Track(track, 0, i, 1)
+      if dest_track == receive_track then
+        local mute_num
+        if send then mute_num = 0 else mute_num = 1 end
+        reaper.SetTrackSendInfo_Value(track, 0, i, "B_MUTE", mute_num)
+        return
+      end
+    end
+    
+    error("to_send: Can't find the receive track specified: " .. receive_track_name .. "\n")
+  end 
+end
+
 -- Controller Action Functions End
 
 local jiachen_controller = {
@@ -131,6 +149,9 @@ local jiachen_controller = {
   
   [20] = function (value)
     return {["BG Ducked"] = {_action = to_bypass(value ~= 127)}}
+  end,
+  [21] = function (value)
+    return {["Synth Clean"] = {_action = to_send("Base", value == 127)}}
   end,
   
   [30] = { Base = {

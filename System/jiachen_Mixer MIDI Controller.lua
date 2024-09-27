@@ -1,25 +1,35 @@
 -- @descrption MIDI Mixer Controller
 -- @author Jiachen
--- @version 1.0.0
+-- @version 1.1.0
 
-function get_midi_device_index_by_name(name)
-    local n = reaper.GetNumMIDIInputs()
-    for i = 0, n - 1 do
-        local _, this_name = reaper.GetMIDIInputName(i, "")
-        if this_name == name then
-            return i
-        end
-    end
-    
-    error("Can't find the device: " .. name)
-end
+--#region CONSTANTS
 
-local DEVICE_TO_MONITOR = get_midi_device_index_by_name("REAPER Mixer") -- TODO: to set manually
+local SCRIPT_IDENTIFIER = "Jiachen_MIDI Mixer Controller"
+
+local DEVICE_TO_MONITOR = "REAPER Mixer"
 local CHANNEL_TO_MONITOR = 16
 
-local this_project = reaper.EnumProjects(-1)
+local THIS_PROJECT = reaper.EnumProjects(-1)
 
-function get_track_by_name(track_name)
+--#endregion
+
+--#region HELPER FUNCTIONS
+
+local function get_midi_device_index_by_name(name)
+  local n = reaper.GetNumMIDIInputs()
+  for i = 0, n - 1 do
+      local _, this_name = reaper.GetMIDIInputName(i, "")
+      if this_name == name then
+          return i
+      end
+  end
+
+  error("Can't find the device: " .. name)
+end
+
+local MIDI_DEVICE = get_midi_device_index_by_name(DEVICE_TO_MONITOR)
+
+local function get_track_by_name(track_name)
   local track_count = reaper.CountTracks(0)
   for i = 0, track_count - 1 do
     local track = reaper.GetTrack(0, i)
@@ -32,10 +42,10 @@ function get_track_by_name(track_name)
   error("Track name specified in controller is wrong: " .. track_name)
 end
 
-function get_fx_by_name(track, fx_name)
+local function get_fx_by_name(track, fx_name)
   local fx_count = reaper.TrackFX_GetCount(track)
   for i = 0, fx_count - 1 do
-    local _, current_fx_name = reaper.TrackFX_GetFXName(track, i, "")
+    local _, current_fx_name = reaper.TrackFX_GetFXName(track, i)
     if current_fx_name == fx_name then
       return i
     end
@@ -44,9 +54,11 @@ function get_fx_by_name(track, fx_name)
   error("FX name specified in controller is wrong: " .. fx_name)
 end
 
--- Controller Action Functions Begin
+--#endregion
 
-function to_mute(mute)
+--#region CONTROLLER ACTION FUNCTIONS
+
+local function to_mute(mute)
   return function(track)
     local mute_number
     if mute then mute_number = 1 else mute_number = 0 end
@@ -54,7 +66,7 @@ function to_mute(mute)
   end
 end
 
-function to_preset(preset_name_or_callback)
+local function to_preset(preset_name_or_callback)
   local t = type(preset_name_or_callback)
   if t == "string" then
     return function(track, fx)
@@ -69,7 +81,7 @@ function to_preset(preset_name_or_callback)
   end
 end
 
-function to_bypass(bypass)
+local function to_bypass(bypass)
   return function(track, fx_or_cc_value, cc_value)
     if cc_value == nil then -- 2 params. for all fxs in track
       reaper.SetMediaTrackInfo_Value(track, "I_FXEN", bypass and 0 or 1)
@@ -79,7 +91,7 @@ function to_bypass(bypass)
   end
 end
 
-function to_map(min, max)
+local function to_map(min, max) -- Untested
   -- map [min, max] if params passed
   if min == nil and max == nil then
     return function(track, fx, param, cc_value)
@@ -97,7 +109,7 @@ function to_map(min, max)
   error("to_map: Invalid Arguments: " .. min .. ", " .. max)
 end
 
-function to_send(receive_track_name, send)
+local function to_send(receive_track_name, send)
   return function(track)
     local receive_track = get_track_by_name(receive_track_name)
     local send_count = reaper.GetTrackNumSends(track, 0)
@@ -115,22 +127,7 @@ function to_send(receive_track_name, send)
   end 
 end
 
--- Controller Action Functions End
-
-local jiachen_controller = {
---  <example>
---  [0] = {
---    VSX = {
---      _action = to_mute(true),
---      ["VST3: VSX (Steven Slate)"] = to_preset(function (value)
---        return ({[0] = "NRG Mid", [1] = "HD Linear 2", [2] = "SUV"})[value]
---      end),
---      MUtility = {
---        _action = to_bypass(true),
---        Volume = to_map()
---      }
---    }
---  },
+local JIACHEN_CONTROLLER = {
   [0] = { VSX = {_action = to_mute(true)} },
   [1] = { VSX = {_action = to_mute(false)} },
   [2] = function (value)
@@ -180,7 +177,11 @@ local jiachen_controller = {
   } }
 }
 
-function get_actions_by_value(controller, cc, cc_value)
+--#endregion
+
+--#region MIDI - ACTION PROCESSING
+
+local function get_actions_by_value(controller, cc, cc_value)
   local actions = controller[cc]
   if type(actions) == "function" then
     return actions(cc_value)
@@ -195,12 +196,12 @@ function get_actions_by_value(controller, cc, cc_value)
   error("Bad syntax for controller. The action list needs to be a generator `function` or a `table`")
 end
 
-function is_action_callback(key, value)
+local function is_action_callback(key, value)
   local t = type(value)
   return key == "_action" and (t == "function" or t == "table")
 end
 
-function execute_action_callback(callback, ...)
+local function execute_action_callback(callback, ...)
   local t = type(callback)
   if t == "function" then
     callback(...)
@@ -211,7 +212,7 @@ function execute_action_callback(callback, ...)
   end
 end
 
-function process_fx_actions(track, fx, fx_actions, cc_value)
+local function process_fx_actions(track, fx, fx_actions, cc_value)
   for param, param_action in pairs(fx_actions) do
     if is_action_callback(param, param_action) then
       execute_action_callback(param_action, track, fx, param, cc_value)
@@ -221,7 +222,7 @@ function process_fx_actions(track, fx, fx_actions, cc_value)
   end
 end
 
-function process_track_actions(track, track_actions, cc_value)
+local function process_track_actions(track, track_actions, cc_value)
   for fx_name, fx_actions in pairs(track_actions) do
     if is_action_callback(fx_name, fx_actions) then
       execute_action_callback(fx_actions, track, cc_value)
@@ -233,16 +234,15 @@ function process_track_actions(track, track_actions, cc_value)
   end
 end
 
-function process_mixing_control(controller, cc, cc_value)
+local function process_mixing_control(controller, cc, cc_value)
   local actions = get_actions_by_value(controller, cc, cc_value)
   if actions == nil then return end
+
+  local current_project = reaper.EnumProjects(-1) -- To deal with the case where mixer project is in the background, remember the current project which isn't the mixer project, do stuff and then finally switch back
+  reaper.SelectProjectInstance(THIS_PROJECT)
   
-  -- Deal with the case where mixer project is in the background
-  local current_project = reaper.EnumProjects(-1)
-  reaper.SelectProjectInstance(this_project)
-  
-  local saved_before = reaper.IsProjectDirty()
-  reaper.Undo_BeginBlock2(this_project)
+  local saved_before = reaper.IsProjectDirty() -- Auto save where possible
+  reaper.Undo_BeginBlock2(THIS_PROJECT)
   reaper.PreventUIRefresh(1)
 
   for track_name, track_actions in pairs(actions) do
@@ -250,19 +250,17 @@ function process_mixing_control(controller, cc, cc_value)
   end
 
   reaper.PreventUIRefresh(-1)
-  reaper.Undo_EndBlock2(this_project, "jiachen_MIDI Mixer Controller", -1)
+  reaper.Undo_EndBlock2(THIS_PROJECT, SCRIPT_IDENTIFIER, -1)
   reaper.TrackList_AdjustWindows(false)
   
   if saved_before then
-    reaper.Main_SaveProject(this_project, false)
+    reaper.Main_SaveProject(THIS_PROJECT, false)
   end
   
   reaper.SelectProjectInstance(current_project)
 end
 
--- MIDI Processing Start
-
-function process_midi_messages(device_to_monitor, channel_to_monitor)
+local function process_midi_messages(device_to_monitor, channel_to_monitor)
   local last_history_index = reaper.MIDI_GetRecentInputEvent(0)
   local function run_forever()
     local history_index = reaper.MIDI_GetRecentInputEvent(0)
@@ -281,7 +279,7 @@ function process_midi_messages(device_to_monitor, channel_to_monitor)
       
         local cc_number = string.byte(data, 2)
         local cc_value = string.byte(data, 3)
-        process_mixing_control(jiachen_controller, cc_number, cc_value)
+        process_mixing_control(JIACHEN_CONTROLLER, cc_number, cc_value)
       end
 
       ::continue::
@@ -295,8 +293,10 @@ function process_midi_messages(device_to_monitor, channel_to_monitor)
   run_forever()
 end
 
-function main()
-  process_midi_messages(DEVICE_TO_MONITOR, CHANNEL_TO_MONITOR)
+--#endregion
+
+local function main()
+  process_midi_messages(MIDI_DEVICE, CHANNEL_TO_MONITOR)
 end
 
 main()

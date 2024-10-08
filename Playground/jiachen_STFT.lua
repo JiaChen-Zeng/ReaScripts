@@ -54,7 +54,7 @@ function stft(audio, window_size, hop_size)
 end
 
 -- Load media file and get audio data
-function get_audio_data_from_media_item(media_item)
+function get_audio_data(media_item)
     local take = reaper.GetActiveTake(media_item)
     if not take or reaper.TakeIsMIDI(take) then return end
 
@@ -69,7 +69,7 @@ end
 -- Example usage
 local media_item = reaper.GetSelectedMediaItem(0, 0)  -- Get the first selected media item
 if media_item then
-    local audio_data = get_audio_data_from_media_item(media_item)
+    local audio_data = get_audio_data(media_item)
     if audio_data then
         local stft_result = stft(audio_data, window_size, hop_size)
         

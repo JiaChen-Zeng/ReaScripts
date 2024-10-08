@@ -94,11 +94,3 @@ function TransientDetection.compute_transient(item)
   local transients = TransientDetection._compute_transients(audio_data)
   return TransientDetection._compute_max_transient(transients, sample_rate)
 end
-
--- Example usage
--- local media_item = reaper.GetSelectedMediaItem(0, 0)  -- Get the first selected media item
--- if media_item then
---   local transient = TransientDetection.compute_transient(media_item)
---   reaper.AddProjectMarker(0, false, reaper.GetMediaItemInfo_Value(media_item, "D_POSITION") + transient, 0, "Transient", -1)
---   reaper.ShowConsoleMsg("Transient: " .. transient .. "\n")
--- end

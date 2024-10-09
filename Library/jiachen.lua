@@ -1,4 +1,4 @@
-function compute_transient(media_item, window_size, hop_size)
+function compute_transient(media_item_take, window_size, hop_size)
   if window_size == nil then window_size = 1024 end
   if hop_size == nil then hop_size = 512 end
 
@@ -60,11 +60,10 @@ function compute_transient(media_item, window_size, hop_size)
   end
 
   -- Load media file and get audio data
-  local function get_audio_data(media_item)
-    local take = reaper.GetActiveTake(media_item)
-    if not take or reaper.TakeIsMIDI(take) then return end
+  local function get_audio_data()
+    if not media_item_take or reaper.TakeIsMIDI(media_item_take) then return end
 
-    local source = reaper.GetMediaItemTake_Source(take)
+    local source = reaper.GetMediaItemTake_Source(media_item_take)
     local sample_rate = reaper.GetMediaSourceSampleRate(source)
     local length, isqn = reaper.GetMediaSourceLength(source)
 
@@ -75,7 +74,7 @@ function compute_transient(media_item, window_size, hop_size)
 
     local num_samples = math.ceil(length * sample_rate)
     local audio_data = reaper.new_array(num_samples)
-    reaper.GetAudioAccessorSamples(reaper.CreateTakeAudioAccessor(take), sample_rate, 1, 0, num_samples, audio_data)
+    reaper.GetAudioAccessorSamples(reaper.CreateTakeAudioAccessor(media_item_take), sample_rate, 1, 0, num_samples, audio_data)
 
     return audio_data, sample_rate
   end
@@ -89,7 +88,9 @@ function compute_transient(media_item, window_size, hop_size)
   end
 
 
-  local audio_data, sample_rate = get_audio_data(media_item)
+  local audio_data, sample_rate = get_audio_data()
   local transients = compute_transients(audio_data)
   return compute_max_transient(transients, sample_rate)
 end
+
+return { compute_transient = compute_transient }

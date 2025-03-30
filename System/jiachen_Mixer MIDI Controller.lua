@@ -151,30 +151,22 @@ local JIACHEN_CONTROLLER = {
     return {["Synth Clean"] = {_action = to_send("Base", value == 127)}}
   end,
   
-  [30] = { Base = {
-    ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = to_bypass(true)},
-    ["VST: sparta_binauraliser (AALTO) (64ch)"] = {_action = to_bypass(true)}
-  }, ["Raw | Simplified 7.1"] = {
-    ["VST3: MChannelMatrix (MeldaProduction)"] = {_action = to_bypass(true)}
-  } },
-  [31] = { Base = {
-    ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = {to_preset("Cross"), to_bypass(false)}},
-    ["VST: sparta_binauraliser (AALTO) (64ch)"] = {_action = to_bypass(true)}
-  }, ["Raw | Simplified 7.1"] = {
-    ["VST3: MChannelMatrix (MeldaProduction)"] = {_action = to_bypass(true)}
-  } },
-  [32] = { Base = {
-    ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = {to_preset("Mono"), to_bypass(false)}},
-    ["VST: sparta_binauraliser (AALTO) (64ch)"] = {_action = to_bypass(true)}
-  }, ["Raw | Simplified 7.1"] = {
-    ["VST3: MChannelMatrix (MeldaProduction)"] = {_action = to_bypass(true)}
-  } },
-  [33] = { Base = {
-    ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = to_bypass(true)},
-    ["VST: sparta_binauraliser (AALTO) (64ch)"] = {_action = to_bypass(false)}
-  }, ["Raw | Simplified 7.1"] = {
-    ["VST3: MChannelMatrix (MeldaProduction)"] = {_action = to_bypass(false)}
-  } }
+  [30] = {
+    Base = { ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = to_bypass(true)} },
+    Surround = {_action = to_mute(true)}
+  },
+  [31] = {
+    Base = { ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = {to_preset("Cross"), to_bypass(false)}} },
+    Surround = {_action = to_mute(true)}
+  },
+  [32] = {
+    Base = { ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = {to_preset("Mono"), to_bypass(false)}} },
+    Surround = {_action = to_mute(true)}
+  },
+  [33] = {
+    Base = { ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = to_bypass(true)} },
+    Surround = {_action = to_mute(false)}
+  }
 }
 
 --#endregion

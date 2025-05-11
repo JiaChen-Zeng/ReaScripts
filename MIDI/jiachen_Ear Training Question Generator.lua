@@ -46,8 +46,12 @@ end
 -- Setter for degree with normalization
 function ScaleNote:setDegree(degree)
     -- Validate degree (must be >= 1)
-    assert(1 <= degree, "Scale degree must be at least 1")
-    
+    if not (1 <= degree) then
+        local errMsg = "Scale degree must be at least 1, but it's " .. degree
+        local trace = debug.traceback(errMsg, 2)  -- Start from caller
+        error(trace)
+    end
+
     -- Normalize degree to 1-7 range and adjust octaveOffset
     local additionalOctaves = math.floor((degree - 1) / 7)
     self._degree = ((degree - 1) % 7) + 1
@@ -91,6 +95,41 @@ function ScaleNote:toString()
     end
     
     return self.degree .. alterationStr .. octaveStr
+end
+
+-- Check if two ScaleNote objects are equal
+function ScaleNote:equals(other)
+    if getmetatable(other) ~= ScaleNote then
+        return false
+    end
+    
+    return self.degree == other.degree 
+        and self.octaveOffset == other.octaveOffset 
+        and self.alteration == other.alteration
+end
+
+-- Move the scale note by a given step size, properly handling octave shifts
+-- stepSize: Number of scale steps to move (can be negative)
+function ScaleNote:move(stepSize)
+    if stepSize == 0 then
+        return self -- No change needed
+    end
+    
+    -- Get the current absolute position
+    local currentAbsPosition = (self.octaveOffset * 7) + self.degree
+    
+    -- Calculate the new absolute position
+    local newAbsPosition = currentAbsPosition + stepSize
+    
+    -- Calculate new octaveOffset and degree
+    local newOctaveOffset = math.floor((newAbsPosition - 1) / 7)
+    local newDegree = ((newAbsPosition - 1) % 7) + 1
+    
+    -- Update values
+    self.octaveOffset = newOctaveOffset
+    self.degree = newDegree
+    
+    return self
 end
 
 ---------------------------------------------------------------
@@ -183,8 +222,68 @@ function Chord.newDyad(degree, interval, direction, octaveOffset)
     return Chord.new(first, second)
 end
 
+-- Move all notes in the chord by a given step size
+function Chord:moveAllNotes(stepSize)
+    -- Move all notes
+    for _, note in ipairs(self.notes) do
+        note:move(stepSize)
+    end
+    
+    return self
+end
+
+-- Check if all notes in the chord are within a given MIDI range
+function Chord:isWithinMidiRange(keyContext, midiRange)
+    for _, note in ipairs(self.notes) do
+        local midiNote = keyContext:scaleNoteToMidi(note)
+        if midiNote < midiRange.lo or midiNote > midiRange.hi then
+            return false -- One note is outside of MIDI range
+        end
+    end
+    return true
+end
+
+-- Map all notes in the chord relative to a target position
+-- This transforms the chord as if the origin point is moved to targetPosition
+function Chord:map(targetPosition)
+    -- Apply the mapping to all notes
+    for _, note in ipairs(self.notes) do
+        -- Calculate relative position from base (1,0)
+        local relDegree = note.degree - 1
+        local relOctave = note.octaveOffset
+        
+        -- Apply new base position
+        note.octaveOffset = relOctave + targetPosition.octaveOffset
+        note:setDegree(relDegree + targetPosition.degree)
+        -- Note: alteration remains unchanged
+    end
+    
+    return self
+end
+
 function Chord:getNotes()
     return self.notes
+end
+
+-- Check if two Chord objects are equal by comparing all their notes
+function Chord:equals(other)
+    if getmetatable(other) ~= Chord then
+        return false
+    end
+    
+    -- First check if the number of notes is the same
+    if #self.notes ~= #other.notes then
+        return false
+    end
+    
+    -- Then check each note
+    for i, note in ipairs(self.notes) do
+        if not note:equals(other.notes[i]) then
+            return false
+        end
+    end
+    
+    return true
 end
 
 ---------------------------------------------------------------
@@ -332,11 +431,23 @@ local currentMidiTake = nil
 
 -- Initialize or get the current MIDI item
 local function getCurrentMidiItem(track)
+    local cursorPos = reaper.GetCursorPosition()
+    
     if currentMidiItem == nil then
-        local cursorPos = reaper.GetCursorPosition()
-        currentMidiItem = reaper.CreateNewMIDIItemInProj(track, cursorPos, cursorPos + getDefaultNoteLength() * 32)  -- Create a longer item initially to fix MIDI length issue
+        -- Create a new MIDI item with initial minimal length
+        currentMidiItem = reaper.CreateNewMIDIItemInProj(track, cursorPos, cursorPos + getDefaultNoteLength())
         currentMidiTake = reaper.GetActiveTake(currentMidiItem)
+    else
+        -- Check if we need to extend the MIDI item
+        local itemStart = reaper.GetMediaItemInfo_Value(currentMidiItem, "D_POSITION")
+        local itemEnd = itemStart + reaper.GetMediaItemInfo_Value(currentMidiItem, "D_LENGTH")
+        
+        -- If cursor position is outside the current item, extend the item
+        if cursorPos > itemEnd then
+            reaper.SetMediaItemLength(currentMidiItem, cursorPos - itemStart + getDefaultNoteLength(), true)
+        end
     end
+    
     return currentMidiItem, currentMidiTake
 end
 
@@ -347,6 +458,58 @@ local function playSilent(bars)
     local cursorPos = reaper.GetCursorPosition()
     reaper.SetEditCurPos(cursorPos + duration, true, false)
     return cursorPos + duration
+end
+
+-- Play an audio file and optionally advance cursor
+local function playMedia(track, filename, bars, advance)
+    if advance == nil then advance = true end
+    bars = bars or 1
+    local requestedDuration = getDefaultNoteLength() * bars
+    
+    local cursorPos = reaper.GetCursorPosition()
+    
+    -- Get project path and construct full file path
+    local projectPath = reaper.GetProjectPath("")
+    local filePath = projectPath .. "/" .. filename
+    
+    -- Check if file exists
+    if not reaper.file_exists(filePath) then
+        error("Audio file not found: " .. filePath)
+    end
+    
+    -- Insert media file into the project
+    local mediaItem = reaper.AddMediaItemToTrack(track)
+    reaper.SetMediaItemPosition(mediaItem, cursorPos, false)
+    
+    -- Get the take
+    local take = reaper.AddTakeToMediaItem(mediaItem)
+    
+    -- Set the source
+    local pcm_source = reaper.PCM_Source_CreateFromFile(filePath)
+    reaper.SetMediaItemTake_Source(take, pcm_source)
+    
+    -- Get source media length
+    local sourceLength = reaper.GetMediaSourceLength(pcm_source)
+    
+    -- Verify the audio file is short enough
+    if requestedDuration < sourceLength then
+        error("Audio file is too long: " .. filename .. " (length: " .. string.format("%.2f", sourceLength) .. 
+              "s, limit: " .. string.format("%.2f", requestedDuration) .. "s)")
+    end
+    
+    -- Keep original source length for the media item (don't stretch/shrink)
+    reaper.SetMediaItemLength(mediaItem, sourceLength, false)
+    
+    -- Set take name to filename (without extension)
+    local fileBaseName = filename:match("(.+)%..+$") or filename
+    reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", fileBaseName, true)
+    
+    -- Advance the cursor if requested (using the requested duration, not the source length)
+    if advance then
+        reaper.SetEditCurPos(cursorPos + requestedDuration, true, false)
+    end
+    
+    return cursorPos + (advance and requestedDuration or 0)
 end
 
 -- Play a note and optionally advance cursor
@@ -367,6 +530,16 @@ local function playNote(track, midiNote, bars, velocity, advance)
     
     -- Insert the note
     reaper.MIDI_InsertNote(take, false, false, startPPQPos, endPPQPos, 0, midiNote, velocity, false)
+    
+    -- Ensure MIDI item extends to cover this note
+    local itemStart = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+    local noteEndTime = cursorPos + duration
+    local itemEnd = itemStart + reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+    
+    -- If the note extends beyond the current MIDI item end, extend the item
+    if noteEndTime > itemEnd then
+        reaper.SetMediaItemLength(item, noteEndTime - itemStart, true)
+    end
     
     -- Advance the cursor if requested
     if advance then
@@ -393,7 +566,7 @@ local function playScaleDegree(track, keyContext, scaleNoteOrDegree, bars, veloc
 end
 
 -- Play a full scale
-local function playScale(track, keyContext, direction, bars, velocity, advance)
+local function playScale(track, keyContext, bars, direction, velocity, advance)
     if advance == nil then advance = true end
     bars = bars or 1/4
     direction = direction or 1  -- 1 for ascending, -1 for descending
@@ -454,6 +627,16 @@ local function playBlockChord(track, keyContext, chordOrNotes, bars, velocity, a
         reaper.MIDI_InsertNote(take, false, false, startPPQPos, endPPQPos, 0, midiNote, velocity, false)
     end
     
+    -- Ensure MIDI item extends to cover this chord
+    local itemStart = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+    local noteEndTime = cursorPos + duration
+    local itemEnd = itemStart + reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+    
+    -- If the chord extends beyond the current MIDI item end, extend the item
+    if noteEndTime > itemEnd then
+        reaper.SetMediaItemLength(item, noteEndTime - itemStart, true)
+    end
+    
     -- Advance the cursor if requested
     if advance then
         reaper.SetEditCurPos(cursorPos + duration, true, false)
@@ -461,6 +644,172 @@ local function playBlockChord(track, keyContext, chordOrNotes, bars, velocity, a
     
     return cursorPos + (advance and duration or 0)
 end
+
+---------------------------------------------------------------
+-- Generator Class
+---------------------------------------------------------------
+local Generator = {}
+Generator.__index = Generator
+
+-- Constructor for Generator
+-- keyContext: KeyContext object
+-- factoryCallback: Function that takes (ScaleNote, midiRange, options) and creates an item
+-- midiRange: Table with lo and hi MIDI note values
+-- movePdf: Table with medium and standardDeviation for normal distribution
+-- options: Table with boolean settings like noRepeat, allowNonDiatonic
+function Generator.new(keyContext, factoryCallback, midiRange, movePdf, options)
+    local self = setmetatable({}, Generator)
+    
+    -- Initialize required parameters
+    self.keyContext = keyContext
+    self.factoryCallback = factoryCallback
+    self.midiRange = midiRange or {lo = 36, hi = 84} -- Default MIDI range C2-C6
+    self.movePdf = movePdf or {mean = 2, stdDev = 3} -- Default distribution for absolute distance
+    self.options = options or {noRepeat = true, allowNonDiatonic = false}
+    
+    -- Initialize state
+    self.currentPosition = ScaleNote.new(1, 0) -- Start at key center (degree 1, octave 0)
+    self.previousItem = nil
+    
+    return self
+end
+
+-- Helper function for normal distribution random
+local function normalRandom(mean, stddev)
+    -- Box-Muller transform for normal distribution
+    local u1 = math.random()
+    local u2 = math.random()
+    local z0 = math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
+    return mean + stddev * z0
+end
+
+-- Generate next item
+function Generator:next()
+    local attempts = 0
+    local maxAttempts = 100 -- Avoid infinite loops
+    local item = nil
+    local answer = nil
+    
+    while attempts < maxAttempts do
+        attempts = attempts + 1
+        
+        -- Try to generate an item and get answer
+        item, answer = self:tryGenerateItem()
+        
+        -- Check if generation succeeded and item passes all checks
+        if item and self:validateItem(item) then
+            -- Update state
+            self:updateState(item)
+            
+            -- Return both the item and its answer
+            return item, answer
+        end
+    end
+    
+    -- Fallback if we couldn't generate a valid item
+    return nil, nil
+end
+
+-- Try to generate an item based on current position
+function Generator:tryGenerateItem()
+    -- Generate movement with direction indicated by sign based on normal distribution (allowing zero)
+    -- Negative value means the other direction so in this phase the probability inclines to the positive direction.
+    local movement = math.floor(normalRandom(self.movePdf.mean, self.movePdf.stdDev) + 0.5)
+    
+    -- Redirect to balance out the probability 
+    local redirection = math.random(1, 2) == 1 and 1 or -1
+    
+    -- Calculate final step size
+    local stepSize = movement * redirection
+
+    -- Create a new position at a valid degree with current octave offset
+    local targetPosition = ScaleNote.new(self.currentPosition.degree, self.currentPosition.octaveOffset)
+    
+    -- Use move to reach the desired position from the current one
+    -- This handles degree wrapping and octave shifts correctly
+    targetPosition:move(stepSize)
+    
+    -- Call factory callback to create the item at the target position and get the answer
+    local item, answer = self.factoryCallback(targetPosition, self.midiRange, self.options)
+    
+    -- If item creation failed, return nil
+    if not item then return nil, nil end
+    
+    -- Check if the item is within MIDI range
+    if getmetatable(item) == Chord then
+        if not item:isWithinMidiRange(self.keyContext, self.midiRange) then
+            return nil, nil -- One note is outside of MIDI range
+        end
+    elseif getmetatable(item) == ScaleNote then
+        local midiNote = self.keyContext:scaleNoteToMidi(item)
+        if midiNote < self.midiRange.lo or midiNote > self.midiRange.hi then
+            return nil, nil -- Outside of MIDI range
+        end
+    end
+    
+    return item, answer
+end
+
+-- Validate the generated item against constraints
+function Generator:validateItem(item)
+    -- Check for repetition
+    if self.options.noRepeat and self:isRepeat(item) then
+        return false
+    end
+    
+    -- Check for non-diatonic notes if not allowed
+    if not self.options.allowNonDiatonic and self:hasNonDiatonicNotes(item) then
+        return false
+    end
+    
+    return true
+end
+
+-- Check if the item is a repeat of the previous item
+function Generator:isRepeat(item)
+    if not self.previousItem then return false end
+    
+    -- Use the equals method of the appropriate class
+    if getmetatable(item) == Chord and getmetatable(self.previousItem) == Chord then
+        return item:equals(self.previousItem)
+    elseif getmetatable(item) == ScaleNote and getmetatable(self.previousItem) == ScaleNote then
+        return item:equals(self.previousItem)
+    end
+    
+    return false
+end
+
+-- Check if the item contains non-diatonic notes
+function Generator:hasNonDiatonicNotes(item)
+    -- This is simplified and should be customized based on what items are
+    if getmetatable(item) == Chord then
+        for _, note in ipairs(item.notes) do
+            if note.alteration ~= 0 then
+                return true
+            end
+        end
+    elseif getmetatable(item) == ScaleNote then
+        return item.alteration ~= 0
+    end
+    
+    return false
+end
+
+-- Update internal state after generating a valid item
+function Generator:updateState(item)
+    -- Update current position
+    if getmetatable(item) == Chord then
+        -- For chords, use the root note as new position
+        self.currentPosition = item.notes[1]
+    else
+        -- For individual notes, use the note as new position
+        self.currentPosition = item
+    end
+    
+    -- Update previous item
+    self.previousItem = item
+end
+
 
 ---------------------------------------------------------------
 -- Helper Functions for Uye Chord Progression Generators
@@ -473,17 +822,17 @@ local function createSubtrack()
     if not selectedTrack then
         return reaper.GetMediaTrack(0, 0) -- Return first track if none selected
     end
-    
+
     -- Get the track index
     local trackIndex = reaper.GetMediaTrackInfo_Value(selectedTrack, "IP_TRACKNUMBER")
-    
+
     -- Insert a new track after the selected track
     reaper.InsertTrackAtIndex(trackIndex, false)
     local newTrack = reaper.GetTrack(0, trackIndex)
-    
+
     -- Make it a child of the selected track
     reaper.SetMediaTrackInfo_Value(newTrack, "P_PARTRACK", reaper.GetMediaTrackInfo_Value(selectedTrack, "PTR_TRACKNUMBER"))
-    
+
     return newTrack
 end
 
@@ -491,34 +840,34 @@ end
 local function exportChordProgressionsToCSV(progressions)
     -- Get timestamp for folder name
     local timestamp = os.date("%Y%m%d_%H%M%S")
-    
+
     -- Get the project path
     local projectPath = reaper.GetProjectPath("")
     local renderFolder = projectPath .. "/../Answers"
-    
+
     -- Create Render folder if it doesn't exist
     if not reaper.file_exists(renderFolder) then
         reaper.RecursiveCreateDirectory(renderFolder, 0)
     end
-    
+
     -- Create timestamped folder
     local exportFolder = renderFolder .. "/" .. timestamp
     reaper.RecursiveCreateDirectory(exportFolder, 0)
-    
+
     -- Create CSV file
     local csvFilePath = exportFolder .. "/chord_progressions.csv"
     local file = io.open(csvFilePath, "w")
-    
+
     -- Write header
     file:write("filename,notes,key\n")
-    
+
     -- Write data
     for filename, data in pairs(progressions) do
         file:write(filename .. "," .. data.notes .. "," .. data.key .. "\n")
     end
-    
+
     file:close()
-    
+
     return csvFilePath
 end
 
@@ -526,31 +875,36 @@ end
 local function executeChordProgressionGenerator(generatorFunc, trackName)
     -- Create a new track
     local track = createSubtrack()
-    
+
     -- Set track name if provided
     if trackName then
         reaper.GetSetMediaTrackInfo_String(track, "P_NAME", trackName, true)
     end
-    
+
     -- Reset cursor position
     reaper.SetEditCurPos(0, false, false)
-    
-    -- Reset MIDI item
+
+    -- Reset MIDI item to avoid bad initial state
     currentMidiItem = nil
     currentMidiTake = nil
-    
+
     -- Generate chord progression
     local result = generatorFunc(track)
-    
+
     -- Update MIDI item with notes data
     if currentMidiItem then
         -- Fixed API as requested - using proper API call for setting media notes
         reaper.GetSetMediaItemInfo_String(currentMidiItem, "P_NOTES", result.notes, true)
     end
-    
+
+    -- Reset state
+    reaper.SetEditCurPos(0, false, false)
+    currentMidiItem = nil
+    currentMidiTake = nil
+
     -- Update the arrange view
     reaper.UpdateArrange()
-    
+
     return result
 end
 
@@ -558,80 +912,130 @@ end
 -- Uye Chord Progression Generators
 ---------------------------------------------------------------
 
--- Generate chord progression using scale degrees 1, 2, 4, 5, 6
-local function generateUyeChordProgressionFolder3(track)
-    -- Available chord degrees
-    local chordDegrees = {1, 2, 4, 5, 6}
-    
+-- Generate chord progression
+local function generateUyeChordProgressionFolder4(track)
+    -- Define factory callback for chord generation
+    local factoryCallback = function(scaleNote)
+        -- Create a diatonic triad with the degree
+        local chord = Chord.newDiatonicTriad(scaleNote.degree, scaleNote.octaveOffset)
+
+        -- Return both the chord and the degree as the answer
+        return chord, scaleNote.degree
+    end
+
     -- Keep generating until all scale degrees are used
     while true do
         -- Create a random key context
-        local rootNote = math.random(0, 11) -- 0 for C, 1 for C#, etc.
+        local key = math.random(0, 11) -- 0 for C, 1 for C#, etc.
         local baseOctave = math.random(3, 4) -- Octaves 3-4
-        local keyContext = MajorKeyContext.new(rootNote, baseOctave)
-        
-        -- Track played chords and validate key usage
+        local keyContext = MajorKeyContext.new(key, baseOctave)
+
+        -- Create key validator
         local validator = UnivocalKeyValidator.new()
+
+        -- Create generator
+        local generator = Generator.new(
+                keyContext,
+                factoryCallback,
+                {lo = 48, hi = 72}, -- MIDI range: C3-C5
+                {mean = 3, stdDev = 4}, -- Movement parameters (absolute distance)
+                {noRepeat = true, allowNonDiatonic = false} -- Options
+        )
+
+        -- Generate 8 chords
         local chords = {}
-        local playedChords = ""
+        local answers = {}
         local keyName = keyContext:getKeyName()
-        
-        -- Previous chord degree to avoid repetition
-        local prevDegreeIndex = nil
-        
-        -- Track current octave offset (between -1 and 1)
-        local currentOctaveOffset = 0
-        
-        -- Play 8 random chords
-        for i = 1, 8 do
-            -- Decide if we should change the octave (20% chance)
-            if math.random(1, 100) <= 20 then
-                -- Determine direction of octave change
-                local direction = math.random(0, 1) * 2 - 1  -- -1 or 1
-                
-                -- Ensure the offset stays within -1 to 1 range
-                if currentOctaveOffset == 1 then
-                    direction = -1  -- Can only go down
-                elseif currentOctaveOffset == -1 then
-                    direction = 1   -- Can only go up
-                end
-                
-                -- Apply octave shift
-                currentOctaveOffset = currentOctaveOffset + direction
-            end
-            
-            -- Generate a random degree different from the previous one
-            local degreeIndex = randomDifferentInteger(1, #chordDegrees, prevDegreeIndex)
-            local degree = chordDegrees[degreeIndex]
-            
-            -- Create the chord with current octave offset
-            local chord = Chord.newDiatonicTriad(degree, currentOctaveOffset)
+        local chordCount = 8
+
+        for i = 1, chordCount do
+            local chord, degree = generator:next()
+            assert(chord, "generator:next() failed to generate an item.")
+
             table.insert(chords, chord)
-            
+
             -- Add chord to validator
             validator:add(chord)
-            
+
             -- Add to played chords string
-            playedChords = playedChords .. degree
-            
-            -- Update previous degree
-            prevDegreeIndex = degreeIndex
+            table.insert(answers, degree)
         end
-        
-        -- Check if all scale degrees were used
+
+        -- Check if we generated all 8 chords and the key is validated
         if validator:validate() then
-            -- Play the chord only after validated because playing function has side effect
+            -- Play the chords
             for i = 1, #chords do
                 playBlockChord(track, keyContext, chords[i])
             end
 
-            return {notes = playedChords, key = keyName}
+            return { notes = table.concat(answers, ""), key = keyName }
         end
-        
-        -- If not all scale degrees were used, reset and try again
-        reaper.SetEditCurPos(0, false, false)
-        currentMidiItem = nil
-        currentMidiTake = nil
+    end
+end
+
+-- Generate chord progression
+local function generateChordPassiveAudio(track)
+    -- Define factory callback for chord generation
+    local factoryCallback = function(scaleNote)
+        -- Create a diatonic triad with the degree
+        local chord = Chord.newDiatonicTriad(scaleNote.degree, scaleNote.octaveOffset)
+
+        -- Return both the chord and the degree as the answer
+        return chord, scaleNote.degree
+    end
+
+    -- Keep generating until all scale degrees are used
+    while true do
+        -- Create a random key context
+        local key = math.random(0, 11) -- 0 for C, 1 for C#, etc.
+        local baseOctave = math.random(3, 4) -- Octaves 3-4
+        local keyContext = MajorKeyContext.new(key, baseOctave)
+
+        -- Create key validator
+        local validator = UnivocalKeyValidator.new()
+
+        -- Create generator
+        local generator = Generator.new(
+                keyContext,
+                factoryCallback,
+                {lo = 48, hi = 72}, -- MIDI range: C3-C5
+                {mean = 3, stdDev = 4}, -- Movement parameters (absolute distance)
+                {noRepeat = true, allowNonDiatonic = false} -- Options
+        )
+
+        -- Generate 8 chords
+        local chords = {}
+        local answers = {}
+        local keyName = keyContext:getKeyName()
+        local chordCount = 30
+
+        for i = 1, chordCount do
+            local chord, degree = generator:next()
+            assert(chord, "generator:next() failed to generate an item.")
+
+            table.insert(chords, chord)
+
+            -- Add chord to validator
+            validator:add(chord)
+
+            -- Add to played chords string
+            table.insert(answers, degree)
+        end
+
+        -- Check if we generated all 8 chords and the key is validated
+        if validator:validate() then
+            playScale(track, keyContext, 1/8)
+            playSilent(1/2)
+
+            -- Play the chords
+            for i = 1, #chords do
+                playBlockChord(track, keyContext, chords[i])
+                playSilent(1/4)
+                playMedia(track, answers[i] .. ".wav", 3/4)
+            end
+
+            return { notes = table.concat(answers, ""), key = keyName }
+        end
     end
 end
 
@@ -645,7 +1049,7 @@ local function main()
     math.randomseed(os.time())
     
     -- Number of chord progressions to generate
-    local n = 10
+    local n = 30
     
     -- Store progression data
     local progressions = {}
@@ -653,10 +1057,10 @@ local function main()
     -- Generate folder3 chord progressions
     for i = 1, n do
         -- Create track name with padded number
-        local trackName = string.format("Folder3_%03d", i)
+        local trackName = string.format("%03d", i)
         
         -- Execute generator and get results
-        local result = executeChordProgressionGenerator(generateUyeChordProgressionFolder3, trackName)
+        local result = executeChordProgressionGenerator(generateChordPassiveAudio, trackName)
         
         -- Store progression data
         progressions[trackName] = result

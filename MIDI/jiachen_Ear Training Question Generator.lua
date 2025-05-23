@@ -1,5 +1,15 @@
--- Ear Training Question Generator for Reaper
--- This script provides functionality for generating ear training exercises in Reaper
+-- @description Ear Training Question Generator
+-- @author Jiachen
+-- @version 1.0.0
+-- @about
+--   # Ear Training Question Generator
+--   This script provides functionality for generating ear training exercises in Reaper.
+--   It can generate various types of ear training exercises, including:
+--   - Scale degree recognition
+--   - Chord progression recognition
+--   - Interval recognition
+--
+--   The script supports exporting exercise data to CSV files for reference.
 
 -- Global constants
 local DEFAULT_VELOCITY = 96 -- MIDI velocity (0-127)
@@ -593,8 +603,8 @@ local function playScale(track, keyContext, bars, direction, velocity, advance)
     return reaper.GetCursorPosition()
 end
 
--- Play a block chord
-local function playBlockChord(track, keyContext, chordOrNotes, bars, velocity, advance)
+-- Play a chord (block or arpeggiated)
+local function playChord(track, keyContext, chordOrNotes, arpeggiation, bars, velocity, advance)
     if advance == nil then advance = true end
     velocity = velocity or DEFAULT_VELOCITY
     bars = bars or 1
@@ -604,9 +614,6 @@ local function playBlockChord(track, keyContext, chordOrNotes, bars, velocity, a
     
     -- Get or create MIDI item and take
     local item, take = getCurrentMidiItem(track)
-    
-    local startPPQPos = reaper.MIDI_GetPPQPosFromProjTime(take, cursorPos)
-    local endPPQPos = reaper.MIDI_GetPPQPosFromProjTime(take, cursorPos + duration)
     
     -- Process chord or notes
     local notesToPlay = {}
@@ -621,10 +628,36 @@ local function playBlockChord(track, keyContext, chordOrNotes, bars, velocity, a
         error("Chord parameter must be a Chord object or a table of ScaleNotes/numbers")
     end
     
-    -- Insert all notes in the chord
-    for _, scaleNote in ipairs(notesToPlay) do
-        local midiNote = keyContext:scaleNoteToMidi(scaleNote)
-        reaper.MIDI_InsertNote(take, false, false, startPPQPos, endPPQPos, 0, midiNote, velocity, false)
+    -- Handle arpeggiation if specified
+    if arpeggiation then
+        local noteCount = #notesToPlay
+        local noteDuration = duration / noteCount
+        local noteStartPos = cursorPos
+        
+        -- Iterate through each character in the arpeggiation string
+        for i = 1, #arpeggiation do
+            local idx = tonumber(arpeggiation:sub(i, i))
+            if idx and idx >= 1 and idx <= noteCount then
+                local noteStartPPQPos = reaper.MIDI_GetPPQPosFromProjTime(take, noteStartPos)
+                local noteEndPPQPos = reaper.MIDI_GetPPQPosFromProjTime(take, noteStartPos + noteDuration)
+                
+                local scaleNote = notesToPlay[idx]
+                local midiNote = keyContext:scaleNoteToMidi(scaleNote)
+                reaper.MIDI_InsertNote(take, false, false, noteStartPPQPos, noteEndPPQPos, 0, midiNote, velocity, false)
+                
+                noteStartPos = noteStartPos + noteDuration
+            end
+        end
+    else
+        -- Play as a block chord (all notes simultaneously)
+        local startPPQPos = reaper.MIDI_GetPPQPosFromProjTime(take, cursorPos)
+        local endPPQPos = reaper.MIDI_GetPPQPosFromProjTime(take, cursorPos + duration)
+        
+        -- Insert all notes in the chord
+        for _, scaleNote in ipairs(notesToPlay) do
+            local midiNote = keyContext:scaleNoteToMidi(scaleNote)
+            reaper.MIDI_InsertNote(take, false, false, startPPQPos, endPPQPos, 0, midiNote, velocity, false)
+        end
     end
     
     -- Ensure MIDI item extends to cover this chord
@@ -965,7 +998,7 @@ local function generateUyeChordProgressionFolder4(track)
         if validator:validate() then
             -- Play the chords
             for i = 1, #chords do
-                playBlockChord(track, keyContext, chords[i])
+                playChord(track, keyContext, chords[i])
             end
 
             return { notes = table.concat(answers, ""), key = keyName }
@@ -998,7 +1031,7 @@ local function generateChordPassiveAudio(track)
         local generator = Generator.new(
                 keyContext,
                 factoryCallback,
-                {lo = 48, hi = 72}, -- MIDI range: C3-C5
+                {lo = 41, hi = 89}, -- MIDI range: F2-F5
                 {mean = 3, stdDev = 4}, -- Movement parameters (absolute distance)
                 {noRepeat = true, allowNonDiatonic = false} -- Options
         )
@@ -1024,12 +1057,16 @@ local function generateChordPassiveAudio(track)
 
         -- Check if we generated all 8 chords and the key is validated
         if validator:validate() then
+            playSilent(1/2) -- Prevent play fading in some audio players
+            
             playScale(track, keyContext, 1/8)
             playSilent(1/2)
 
             -- Play the chords
             for i = 1, #chords do
-                playBlockChord(track, keyContext, chords[i])
+                -- Randomly choose ascending (123) or descending (321) pattern
+                local pattern = math.random(1, 2) == 1 and "123" or "321"
+                playChord(track, keyContext, chords[i], pattern)
                 playSilent(1/4)
                 playMedia(track, answers[i] .. ".wav", 3/4)
             end

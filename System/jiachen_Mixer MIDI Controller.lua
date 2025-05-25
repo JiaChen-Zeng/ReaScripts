@@ -1,6 +1,6 @@
 -- @description MIDI Mixer Controller
 -- @author Jiachen
--- @version 1.2.1
+-- @version 1.3.0
 
 --#region CONSTANTS
 
@@ -63,6 +63,41 @@ local function to_mute(mute)
     local mute_number
     if mute then mute_number = 1 else mute_number = 0 end
     reaper.SetMediaTrackInfo_Value(track, "B_MUTE", mute_number)
+  end
+end
+
+local function to_mute_all(mute)
+  return function(track)
+    local mute_number
+    if mute then mute_number = 1 else mute_number = 0 end
+    
+    -- First mute the track itself
+    reaper.SetMediaTrackInfo_Value(track, "B_MUTE", mute_number)
+    
+    -- Get track index
+    local track_idx = reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") - 1
+    local track_depth = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
+    
+    -- Only process descendants if this is a folder track
+    if track_depth <= 0 then return end
+    
+    local current_depth = 1 -- Start at 1 because we're inside a folder
+    local track_count = reaper.CountTracks(0)
+    
+    -- Iterate through potential child tracks
+    for i = track_idx + 1, track_count - 1 do
+      local child_track = reaper.GetTrack(0, i)
+      local child_depth = reaper.GetMediaTrackInfo_Value(child_track, "I_FOLDERDEPTH")
+      
+      -- Update current depth
+      current_depth = current_depth + child_depth
+      
+      -- If we've come back to the original depth or higher, we're done
+      if current_depth <= 0 then break end
+      
+      -- Mute this track
+      reaper.SetMediaTrackInfo_Value(child_track, "B_MUTE", mute_number)
+    end
   end
 end
 
@@ -144,11 +179,11 @@ local JIACHEN_CONTROLLER = {
   [14] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("SUV")} } },
   [15] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Club")} } },
   
-  [20] = function (value)
-    return {["BG Ducked"] = {_action = to_bypass(value ~= 127)}}
-  end,
   [21] = function (value)
-    return {["Synth Clean"] = {_action = to_send("Base", value == 127)}}
+    return {
+      ["Hard Synth Clean"] = {_action = to_send("Base", value == 127)},
+      ["Soft Synth"] = {_action = to_mute_all(value == 127)},
+    }
   end,
   
   [30] = {

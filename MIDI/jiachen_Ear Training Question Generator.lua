@@ -1,6 +1,6 @@
 -- @description Ear Training Question Generator
 -- @author Jiachen
--- @version 1.0.0
+-- @version 1.1.0
 -- @about
 --   # Ear Training Question Generator
 --   This script provides functionality for generating ear training exercises in Reaper.
@@ -856,15 +856,63 @@ local function createSubtrack()
         return reaper.GetMediaTrack(0, 0) -- Return first track if none selected
     end
 
-    -- Get the track index
+    -- Get the track index and folder depth
     local trackIndex = reaper.GetMediaTrackInfo_Value(selectedTrack, "IP_TRACKNUMBER")
-
-    -- Insert a new track after the selected track
-    reaper.InsertTrackAtIndex(trackIndex, false)
-    local newTrack = reaper.GetTrack(0, trackIndex)
-
-    -- Make it a child of the selected track
-    reaper.SetMediaTrackInfo_Value(newTrack, "P_PARTRACK", reaper.GetMediaTrackInfo_Value(selectedTrack, "PTR_TRACKNUMBER"))
+    local folderDepth = reaper.GetMediaTrackInfo_Value(selectedTrack, "I_FOLDERDEPTH")
+    
+    -- Check if the selected track is a folder parent (depth should be 1)
+    local isFolder = (folderDepth == 1)
+    
+    -- If not a folder, make it a folder
+    if not isFolder then
+        reaper.SetMediaTrackInfo_Value(selectedTrack, "I_FOLDERDEPTH", 1)
+    end
+    
+    -- Find the correct position for the new track
+    -- If the selected track is already a folder, we need to find the last track in the folder
+    local trackCount = reaper.CountTracks(0)
+    local insertIndex = trackIndex
+    
+    if isFolder then
+        local currentDepth = 1 -- Start at depth 1 (inside folder)
+        
+        -- Look for the end of the folder
+        for i = trackIndex, trackCount - 1 do
+            local depth = reaper.GetMediaTrackInfo_Value(reaper.GetTrack(0, i), "I_FOLDERDEPTH")
+            currentDepth = currentDepth + depth
+            
+            -- If we've reached the end of the folder
+            if currentDepth <= 0 then
+                insertIndex = i
+                break
+            end
+            
+            -- If we reached the last track
+            if i == trackCount - 1 then
+                insertIndex = trackCount
+                break
+            end
+        end
+    end
+    
+    -- Insert a new track at the appropriate position (at the end of the folder or right after selected track)
+    reaper.InsertTrackAtIndex(insertIndex, false)
+    local newTrack = reaper.GetTrack(0, insertIndex)
+    
+    -- If this is the last track in the folder, update its folder depth to close the folder
+    if isFolder then
+        -- Check if the next track (if any) closes the folder
+        if insertIndex < trackCount then
+            local nextTrackDepth = reaper.GetMediaTrackInfo_Value(reaper.GetTrack(0, insertIndex + 1), "I_FOLDERDEPTH")
+            if nextTrackDepth < 0 then
+                -- The next track is a folder closing track, so we need to update its depth
+                reaper.SetMediaTrackInfo_Value(reaper.GetTrack(0, insertIndex + 1), "I_FOLDERDEPTH", nextTrackDepth - 1)
+            end
+        end
+    else
+        -- Since we just made the selected track a folder, we need to close it
+        reaper.SetMediaTrackInfo_Value(newTrack, "I_FOLDERDEPTH", -1)
+    end
 
     return newTrack
 end
@@ -909,11 +957,6 @@ local function executeChordProgressionGenerator(generatorFunc, trackName)
     -- Create a new track
     local track = createSubtrack()
 
-    -- Set track name if provided
-    if trackName then
-        reaper.GetSetMediaTrackInfo_String(track, "P_NAME", trackName, true)
-    end
-
     -- Reset cursor position
     reaper.SetEditCurPos(0, false, false)
 
@@ -923,7 +966,10 @@ local function executeChordProgressionGenerator(generatorFunc, trackName)
 
     -- Generate chord progression
     local result = generatorFunc(track)
-
+    
+    -- Set track name if provided
+    reaper.GetSetMediaTrackInfo_String(track, "P_NAME", trackName and trackName or result.notes, true)
+    
     -- Update MIDI item with notes data
     if currentMidiItem then
         -- Fixed API as requested - using proper API call for setting media notes
@@ -935,9 +981,6 @@ local function executeChordProgressionGenerator(generatorFunc, trackName)
     currentMidiItem = nil
     currentMidiTake = nil
 
-    -- Update the arrange view
-    reaper.UpdateArrange()
-
     return result
 end
 
@@ -946,70 +989,13 @@ end
 ---------------------------------------------------------------
 
 -- Generate chord progression
-local function generateUyeChordProgressionFolder4(track)
-    -- Define factory callback for chord generation
-    local factoryCallback = function(scaleNote)
-        -- Create a diatonic triad with the degree
-        local chord = Chord.newDiatonicTriad(scaleNote.degree, scaleNote.octaveOffset)
-
-        -- Return both the chord and the degree as the answer
-        return chord, scaleNote.degree
-    end
-
-    -- Keep generating until all scale degrees are used
-    while true do
-        -- Create a random key context
-        local key = math.random(0, 11) -- 0 for C, 1 for C#, etc.
-        local baseOctave = math.random(3, 4) -- Octaves 3-4
-        local keyContext = MajorKeyContext.new(key, baseOctave)
-
-        -- Create key validator
-        local validator = UnivocalKeyValidator.new()
-
-        -- Create generator
-        local generator = Generator.new(
-                keyContext,
-                factoryCallback,
-                {lo = 48, hi = 72}, -- MIDI range: C3-C5
-                {mean = 3, stdDev = 4}, -- Movement parameters (absolute distance)
-                {noRepeat = true, allowNonDiatonic = false} -- Options
-        )
-
-        -- Generate 8 chords
-        local chords = {}
-        local answers = {}
-        local keyName = keyContext:getKeyName()
-        local chordCount = 8
-
-        for i = 1, chordCount do
-            local chord, degree = generator:next()
-            assert(chord, "generator:next() failed to generate an item.")
-
-            table.insert(chords, chord)
-
-            -- Add chord to validator
-            validator:add(chord)
-
-            -- Add to played chords string
-            table.insert(answers, degree)
-        end
-
-        -- Check if we generated all 8 chords and the key is validated
-        if validator:validate() then
-            -- Play the chords
-            for i = 1, #chords do
-                playChord(track, keyContext, chords[i])
-            end
-
-            return { notes = table.concat(answers, ""), key = keyName }
-        end
-    end
-end
-
--- Generate chord progression
 local function generateChordPassiveAudio(track)
     -- Define factory callback for chord generation
     local factoryCallback = function(scaleNote)
+        -- Only allow degrees that the user would like to train
+        local degreeToTrain = "145"
+        if not string.find(degreeToTrain, scaleNote.degree) then return nil end
+
         -- Create a diatonic triad with the degree
         local chord = Chord.newDiatonicTriad(scaleNote.degree, scaleNote.octaveOffset)
 
@@ -1067,8 +1053,8 @@ local function generateChordPassiveAudio(track)
                 -- Randomly choose ascending (123) or descending (321) pattern
                 local pattern = math.random(1, 2) == 1 and "123" or "321"
                 playChord(track, keyContext, chords[i], pattern)
-                playSilent(1/4)
-                playMedia(track, answers[i] .. ".wav", 3/4)
+                playSilent(1/2)
+                playMedia(track, answers[i] .. ".wav", 1)
             end
 
             return { notes = table.concat(answers, ""), key = keyName }
@@ -1086,23 +1072,22 @@ local function main()
     math.randomseed(os.time())
     
     -- Number of chord progressions to generate
-    local n = 30
+    local n = 100
     
     -- Store progression data
     local progressions = {}
     reaper.Undo_BeginBlock()
     -- Generate folder3 chord progressions
     for i = 1, n do
-        -- Create track name with padded number
-        local trackName = string.format("%03d", i)
-        
         -- Execute generator and get results
-        local result = executeChordProgressionGenerator(generateChordPassiveAudio, trackName)
+        local result = executeChordProgressionGenerator(generateChordPassiveAudio)
         
         -- Store progression data
-        progressions[trackName] = result
+        local trackIndex = string.format("%03d", i)
+        progressions[trackIndex] = result
     end
-    reaper.Undo_EndBlock("generateUyeChordProgressionFolder3", -1)
+    reaper.UpdateArrange()
+    reaper.Undo_EndBlock("Ear Training Question Generator", -1)
     
     -- Export to CSV
     exportChordProgressionsToCSV(progressions)

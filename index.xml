@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Jiachen Scripts" commit="5c94c1a7eeff292d7b39cfd5cefdb49ffd76e60a">
+<index version="1" name="Jiachen Scripts" commit="8840b9475b96349a17ec3e7445423606259c9956">
   <category name="Item">
     <reapack name="jiachen_Make selected tracks loopable within time selection.lua" type="script" desc="Make selected tracks loopable within time selection">
       <metadata>
@@ -86,6 +86,9 @@ Test the link to my repo
       </version>
       <version name="1.2.1" author="Jiachen" time="2025-05-23T10:55:32Z">
         <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/5c94c1a7eeff292d7b39cfd5cefdb49ffd76e60a/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
+      </version>
+      <version name="1.3.0" author="Jiachen" time="2025-05-25T09:10:50Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/8840b9475b96349a17ec3e7445423606259c9956/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
       </version>
     </reapack>
   </category>

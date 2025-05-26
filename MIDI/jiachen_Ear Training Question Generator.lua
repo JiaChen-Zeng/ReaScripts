@@ -1,6 +1,6 @@
 -- @description Ear Training Question Generator
 -- @author Jiachen
--- @version 1.1.0
+-- @version 1.2.0
 -- @about
 --   # Ear Training Question Generator
 --   This script provides functionality for generating ear training exercises in Reaper.
@@ -689,7 +689,7 @@ Generator.__index = Generator
 -- factoryCallback: Function that takes (ScaleNote, midiRange, options) and creates an item
 -- midiRange: Table with lo and hi MIDI note values
 -- movePdf: Table with medium and standardDeviation for normal distribution
--- options: Table with boolean settings like noRepeat, allowNonDiatonic
+-- options: Table with boolean settings like noRepeat, allowNonDiatonic, maxAnswerRepeat (integer or nil)
 function Generator.new(keyContext, factoryCallback, midiRange, movePdf, options)
     local self = setmetatable({}, Generator)
     
@@ -698,11 +698,12 @@ function Generator.new(keyContext, factoryCallback, midiRange, movePdf, options)
     self.factoryCallback = factoryCallback
     self.midiRange = midiRange or {lo = 36, hi = 84} -- Default MIDI range C2-C6
     self.movePdf = movePdf or {mean = 2, stdDev = 3} -- Default distribution for absolute distance
-    self.options = options or {noRepeat = true, allowNonDiatonic = false}
+    self.options = options or {noRepeat = true, allowNonDiatonic = false, maxAnswerRepeat = math.huge}
     
     -- Initialize state
     self.currentPosition = ScaleNote.new(1, 0) -- Start at key center (degree 1, octave 0)
     self.previousItem = nil
+    self.previousAnswers = {} -- Track previous answers for maxAnswerRepeat option
     
     return self
 end
@@ -730,9 +731,14 @@ function Generator:next()
         item, answer = self:tryGenerateItem()
         
         -- Check if generation succeeded and item passes all checks
-        if item and self:validateItem(item) then
+        if item and self:validateItem(item, answer) then
             -- Update state
             self:updateState(item)
+            
+            -- Track the answer for maxAnswerRepeat option
+            if answer then
+                table.insert(self.previousAnswers, answer)
+            end
             
             -- Return both the item and its answer
             return item, answer
@@ -784,7 +790,7 @@ function Generator:tryGenerateItem()
 end
 
 -- Validate the generated item against constraints
-function Generator:validateItem(item)
+function Generator:validateItem(item, answer)
     -- Check for repetition
     if self.options.noRepeat and self:isRepeat(item) then
         return false
@@ -793,6 +799,23 @@ function Generator:validateItem(item)
     -- Check for non-diatonic notes if not allowed
     if not self.options.allowNonDiatonic and self:hasNonDiatonicNotes(item) then
         return false
+    end
+    
+    -- Check for consecutive identical answers if maxAnswerRepeat is specified
+    if self.options.maxAnswerRepeat and answer then
+        local consecutiveCount = 0
+        
+        -- Count how many times the current answer has appeared consecutively
+        for i = #self.previousAnswers, 1, -1 do
+            if self.previousAnswers[i] == answer then
+                consecutiveCount = consecutiveCount + 1
+                if consecutiveCount >= self.options.maxAnswerRepeat then
+                    return false -- Too many consecutive identical answers
+                end
+            else
+                break -- Chain broken, stop counting
+            end
+        end
     end
     
     return true
@@ -1019,14 +1042,14 @@ local function generateChordPassiveAudio(track)
                 factoryCallback,
                 {lo = 41, hi = 89}, -- MIDI range: F2-F5
                 {mean = 3, stdDev = 4}, -- Movement parameters (absolute distance)
-                {noRepeat = true, allowNonDiatonic = false} -- Options
+                {noRepeat = true, allowNonDiatonic = false, maxAnswerRepeat = 2} -- Options
         )
 
-        -- Generate 8 chords
+        -- Generate many chords
         local chords = {}
         local answers = {}
         local keyName = keyContext:getKeyName()
-        local chordCount = 30
+        local chordCount = 10
 
         for i = 1, chordCount do
             local chord, degree = generator:next()
@@ -1053,8 +1076,10 @@ local function generateChordPassiveAudio(track)
                 -- Randomly choose ascending (123) or descending (321) pattern
                 local pattern = math.random(1, 2) == 1 and "123" or "321"
                 playChord(track, keyContext, chords[i], pattern)
-                playSilent(1/2)
-                playMedia(track, answers[i] .. ".wav", 1)
+                playSilent(3/4)
+                playMedia(track, answers[i] .. ".wav", 1, false)
+                playChord(track, keyContext, chords[i])
+                playSilent(3/4)
             end
 
             return { notes = table.concat(answers, ""), key = keyName }

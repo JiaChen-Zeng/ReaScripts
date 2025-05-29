@@ -306,7 +306,7 @@ KeyContext.__index = KeyContext
 function KeyContext.new(rootNote, baseOctave, scalePattern)
     local self = setmetatable({}, KeyContext)
     self.rootNote = rootNote or 0  -- 0 for C, 1 for C#, etc.
-    self.baseOctave = baseOctave or 4  -- MIDI octave number (middle C is in octave 4)
+    self.baseOctave = baseOctave or 4  -- MIDI octave number (middle C is in octave 4). WARNING: -1 is the lowest for MIDI 0~11
     self.scalePattern = scalePattern or {0, 2, 4, 5, 7, 9, 11}  -- Default to major scale
     return self
 end
@@ -871,6 +871,14 @@ end
 -- Helper Functions for Uye Chord Progression Generators
 ---------------------------------------------------------------
 
+-- Convert MIDI note number to note name with octave
+local function midiNoteToString(midiNote)
+    local noteNames = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }
+    local octave = math.floor(midiNote / 12) - 1
+    local noteName = noteNames[(midiNote % 12) + 1]
+    return noteName .. octave
+end
+
 -- Create a new track as a subtrack of selected track
 local function createSubtrack()
     -- Get the currently selected track
@@ -1067,9 +1075,13 @@ local function generateChordPassiveAudio(track)
         -- Check if we generated all 8 chords and the key is validated
         if validator:validate() then
             playSilent(1/2) -- Prevent play fading in some audio players
-            
-            playScale(track, keyContext, 1/8)
-            playSilent(1/2)
+
+            playChord(track, keyContext, Chord.newDiatonicTriad(1), nil, 3/4)
+            playChord(track, keyContext, Chord.newDiatonicTriad(4), nil, 3/4)
+            playChord(track, keyContext, Chord.newDiatonicTriad(5), nil, 3/4)
+            playChord(track, keyContext, Chord.newDiatonicTriad(1), nil, 3/4)
+
+            playSilent(3/4)
 
             -- Play the chords
             for i = 1, #chords do

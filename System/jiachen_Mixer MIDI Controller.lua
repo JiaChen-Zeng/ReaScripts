@@ -1,6 +1,6 @@
 -- @description MIDI Mixer Controller
 -- @author Jiachen
--- @version 1.3.0
+-- @version 1.4.0
 
 --#region CONSTANTS
 
@@ -180,7 +180,7 @@ local JIACHEN_CONTROLLER = {
   [15] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Club")} } },
   
   [20] = function (value)
-    return { ["Non-Inst"] = { ["VST3: kHs Gain (Kilohearts)"] = { _action = to_bypass(value == 127) } } }
+    return { ["Non-Inst"] = { ["VST3: kHs Gain (Kilohearts)"] = { _action = to_bypass(value ~= 127) } } }
   end,
   
   [21] = function (value)

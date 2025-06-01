@@ -179,9 +179,13 @@ local JIACHEN_CONTROLLER = {
   [14] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("SUV")} } },
   [15] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Club")} } },
   
+  [20] = function (value)
+    return { ["Non-Inst"] = { ["VST3: kHs Gain (Kilohearts)"] = { _action = to_bypass(value == 127) } } }
+  end,
+  
   [21] = function (value)
     return {
-      ["Hard Synth Clean"] = {_action = to_send("Base", value == 127)},
+      ["Hard Synth Clean"] = {_action = to_send("Inst", value == 127)},
       ["Soft Synth"] = {_action = to_mute_all(value == 127)},
     }
   end,

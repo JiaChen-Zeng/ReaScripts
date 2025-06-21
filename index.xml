@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Jiachen Scripts" commit="85d76c7cea42c85169fc87d34a17db87b5367399">
+<index version="1" name="Jiachen Scripts" commit="5c9f481ad4688c3321ec0107cbbb53e0fb8a6d44">
   <category name="Item">
     <reapack name="jiachen_Make selected tracks loopable within time selection.lua" type="script" desc="Make selected tracks loopable within time selection">
       <metadata>
@@ -58,6 +58,9 @@
       <version name="1.2.0" author="Jiachen" time="2025-05-26T14:33:44Z">
         <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/9882605fcacdd0ba627fb8637c1b0008af65950a/MIDI/jiachen_Ear%20Training%20Question%20Generator.lua</source>
       </version>
+      <version name="1.2.1" author="Jiachen" time="2025-06-21T06:59:52Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/5c9f481ad4688c3321ec0107cbbb53e0fb8a6d44/MIDI/jiachen_Ear%20Training%20Question%20Generator.lua</source>
+      </version>
     </reapack>
   </category>
   <category name="Playground">
@@ -80,6 +83,11 @@ Test the link to my repo
     </reapack>
   </category>
   <category name="System">
+    <reapack name="jiachen_Global Setup Action.lua" type="script" desc="Global Setup Action">
+      <version name="1.0.0" author="Jiachen" time="2025-06-21T06:59:07Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/5af0ccbf9595c10b14b518b4bd18ebd7d58de4da/System/jiachen_Global%20Setup%20Action.lua</source>
+      </version>
+    </reapack>
     <reapack name="jiachen_Mixer MIDI Controller.lua" type="script" desc="MIDI Mixer Controller">
       <version name="1.0.0" author="Jiachen" time="2024-09-24T08:48:07Z">
         <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/459e1aae718211616f26cad1dd60f675b622cb3b/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
@@ -98,6 +106,11 @@ Test the link to my repo
       </version>
       <version name="1.4.0" author="Jiachen" time="2025-06-01T09:22:59Z">
         <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/85d76c7cea42c85169fc87d34a17db87b5367399/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
+      </version>
+    </reapack>
+    <reapack name="jiachen_VST Evaluation Resetter.lua" type="script" desc="VST Evaluation Resetter">
+      <version name="1.0.0" author="Jiachen" time="2025-06-21T06:59:07Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/5af0ccbf9595c10b14b518b4bd18ebd7d58de4da/System/jiachen_VST%20Evaluation%20Resetter.lua</source>
       </version>
     </reapack>
   </category>

@@ -1,6 +1,6 @@
 -- @description Ear Training Question Generator
 -- @author Jiachen
--- @version 1.2.0
+-- @version 1.2.1
 -- @about
 --   # Ear Training Question Generator
 --   This script provides functionality for generating ear training exercises in Reaper.
@@ -1024,13 +1024,13 @@ local function generateChordPassiveAudio(track)
     -- Define factory callback for chord generation
     local factoryCallback = function(scaleNote)
         -- Only allow degrees that the user would like to train
-        local degreeToTrain = "145"
+        local degreeToTrain = "1234567"
         if not string.find(degreeToTrain, scaleNote.degree) then return nil end
 
         -- Create a diatonic triad with the degree
         local chord = Chord.newDiatonicTriad(scaleNote.degree, scaleNote.octaveOffset)
 
-        -- Return both the chord and the degree as the answer
+        -- Return both the chord and the degree as the answe=
         return chord, scaleNote.degree
     end
 
@@ -1114,6 +1114,7 @@ local function main()
     -- Store progression data
     local progressions = {}
     reaper.Undo_BeginBlock()
+    reaper.PreventUIRefresh(1)
     -- Generate folder3 chord progressions
     for i = 1, n do
         -- Execute generator and get results
@@ -1123,6 +1124,7 @@ local function main()
         local trackIndex = string.format("%03d", i)
         progressions[trackIndex] = result
     end
+    reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
     reaper.Undo_EndBlock("Ear Training Question Generator", -1)
     

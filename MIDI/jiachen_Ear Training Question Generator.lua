@@ -391,12 +391,16 @@ function UnivocalKeyValidator:add(item)
         -- If a number is provided, mark that scale degree as used
         local degree = ((item - 1) % 7) + 1 -- Normalize to 1-7 range
         self.degreesUsed[degree] = true
+    elseif getmetatable(item) == ScaleNote then
+        self.degreesUsed[item.degree] = true
     elseif getmetatable(item) == Chord then
         -- If a chord is provided, add all its notes
         for _, note in ipairs(item:getNotes()) do
             local degree = ((note.degree - 1) % 7) + 1 -- Normalize to 1-7 range
             self.degreesUsed[degree] = true
         end
+    else
+        error("Unexpected type of item" .. item)
     end
 end
 
@@ -1099,6 +1103,72 @@ local function generateChordPassiveAudio(track)
     end
 end
 
+-- Generate chord progression
+local function generateMelodicDictationHarmonicMinorVersionAudio(track)
+    -- Define factory callback for chord generation
+    local factoryCallback = function(scaleNote)
+        -- Return both the question note and the degree as the answer
+        return scaleNote, scaleNote.degree
+    end
+
+    -- Keep generating until all scale degrees are used
+    while true do
+        -- Create a random key context
+        local key = math.random(0, 11) -- 0 for C, 1 for C#, etc.
+        local baseOctave = math.random(3, 4) -- Octaves 3-4
+        local keyContext = HarmonicMinorKeyContext.new(key, baseOctave)
+
+        -- Create key validator
+        local validator = UnivocalKeyValidator.new()
+
+        -- Create generator
+        local generator = Generator.new(
+                keyContext,
+                factoryCallback,
+                {lo = 41, hi = 89}, -- MIDI range: F2-F5
+                {mean = 2, stdDev = 3}, -- Movement parameters (absolute distance)
+                {noRepeat = true, allowNonDiatonic = false, maxAnswerRepeat = 2} -- Options
+        )
+
+        -- Generate many chords
+        local notes = {}
+        local answers = {}
+        local keyName = keyContext:getKeyName()
+        local questionCount = 20
+
+        for i = 1, questionCount do
+            local question, degree = generator:next()
+            assert(question, "generator:next() failed to generate an item.")
+
+            table.insert(notes, question)
+
+            -- Add notes to validator
+            validator:add(question)
+
+            -- Add to answer
+            table.insert(answers, degree)
+        end
+
+        -- Check if we generated all 8 chords and the key is validated
+        if validator:validate() then
+            playScale(track, keyContext)
+            --playChord(track, keyContext, Chord.newDiatonicTriad(1), nil, 3/4)
+            --playChord(track, keyContext, Chord.newDiatonicTriad(4), nil, 3/4)
+            --playChord(track, keyContext, Chord.newDiatonicTriad(5), nil, 3/4)
+            --playChord(track, keyContext, Chord.newDiatonicTriad(1), nil, 3/4)
+            
+            playSilent(1/2)
+
+            -- Play the questions
+            for i = 1, #notes do
+                playScaleDegree(track, keyContext, notes[i])
+            end
+
+            return { notes = table.concat(answers, ""), key = keyName }
+        end
+    end
+end
+
 ---------------------------------------------------------------
 -- Main Function
 ---------------------------------------------------------------
@@ -1108,23 +1178,23 @@ local function main()
     -- Initialize random seed
     math.randomseed(os.time())
     
-    -- Number of chord progressions to generate
-    local n = 100
+    -- Number of audio to generate
+    local n = 3
     
     -- Store progression data
     local progressions = {}
     reaper.Undo_BeginBlock()
-    reaper.PreventUIRefresh(1)
-    -- Generate folder3 chord progressions
+    --reaper.PreventUIRefresh(1)
+    -- Generate
     for i = 1, n do
         -- Execute generator and get results
-        local result = executeChordProgressionGenerator(generateChordPassiveAudio)
+        local result = executeChordProgressionGenerator(generateMelodicDictationHarmonicMinorVersionAudio)
         
         -- Store progression data
         local trackIndex = string.format("%03d", i)
         progressions[trackIndex] = result
     end
-    reaper.PreventUIRefresh(-1)
+    --reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
     reaper.Undo_EndBlock("Ear Training Question Generator", -1)
     

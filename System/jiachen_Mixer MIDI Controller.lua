@@ -189,6 +189,9 @@ local JIACHEN_CONTROLLER = {
       ["Soft Synth"] = {_action = to_mute_all(value == 127)},
     }
   end,
+  [24] = function (value)
+    return { ["OBS"] = {_action = to_send("Non-Inst", value == 127)} }
+  end,
   
   [30] = {
     Base = { ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = to_bypass(true)} },

@@ -101,8 +101,21 @@ function resetEvaluationPlugins()
   end
 end
 
--- Create a logger that resets evaluation plugins every 29 minutes
-table.insert(tasks, TimedTask.new(29, resetEvaluationPlugins, "VSTResetter"))
+-- Create a logger that resets evaluation plugins every 10 minutes
+table.insert(tasks, TimedTask.new(10, resetEvaluationPlugins, "VSTResetter"))
+
+-- Function to manually reset all evaluation plugins and restart timers
+function runResetManually()
+  for _, task in ipairs(tasks) do
+    -- Run the callback function but also update the last_time to restart the timer
+    task.callback()
+    task.last_time = os.time()
+  end
+end
+
+-- Register an action to allow manual resetting
+reaper.SetToggleCommandState(0, reaper.NamedCommandLookup("_RS32c31be93df87277dc5d366a5b54956c924cbcc8"), 0)
+reaper.RefreshToolbar2(0, reaper.NamedCommandLookup("_RS32c31be93df87277dc5d366a5b54956c924cbcc8"))
 
 -- Main function that checks all tasks
 function main()
@@ -115,10 +128,5 @@ function main()
   reaper.defer(main)
 end
 
--- Run all tasks immediately on startup
-for _, task in ipairs(tasks) do
-  task:runNow()
-end
-
--- Start the main loop
+-- Start the main loop without running tasks immediately
 main()

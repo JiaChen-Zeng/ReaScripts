@@ -1061,7 +1061,7 @@ local function generateChordPassiveAudio(track)
         local chords = {}
         local answers = {}
         local keyName = keyContext:getKeyName()
-        local chordCount = 10
+        local chordCount = 20
 
         for i = 1, chordCount do
             local chord, degree = generator:next()
@@ -1080,22 +1080,31 @@ local function generateChordPassiveAudio(track)
         if validator:validate() then
             playSilent(1/2) -- Prevent play fading in some audio players
 
-            playChord(track, keyContext, Chord.newDiatonicTriad(1), nil, 3/4)
-            playChord(track, keyContext, Chord.newDiatonicTriad(4), nil, 3/4)
-            playChord(track, keyContext, Chord.newDiatonicTriad(5), nil, 3/4)
-            playChord(track, keyContext, Chord.newDiatonicTriad(1), nil, 3/4)
+            playChord(track, keyContext, Chord.newDiatonicTriad(1), nil, 1/2)
+            playChord(track, keyContext, Chord.newDiatonicTriad(4), nil, 1/4)
+            playChord(track, keyContext, Chord.newDiatonicTriad(5), nil, 1/4)
+            playChord(track, keyContext, Chord.newDiatonicTriad(1), nil, 1)
 
-            playSilent(3/4)
+            playSilent(1)
 
-            -- Play the chords
-            for i = 1, #chords do
-                -- Randomly choose ascending (123) or descending (321) pattern
-                local pattern = math.random(1, 2) == 1 and "123" or "321"
-                playChord(track, keyContext, chords[i], pattern)
-                playSilent(3/4)
-                playMedia(track, answers[i] .. ".wav", 1, false)
-                playChord(track, keyContext, chords[i])
-                playSilent(3/4)
+            -- Play the chords in batches of 4
+            for batchStart = 1, #chords, 4 do
+                local batchEnd = math.min(batchStart + 3, #chords)
+
+                -- Play 4 chords consecutively
+                for i = batchStart, batchEnd do
+                    playChord(track, keyContext, chords[i])
+                end
+
+                playSilent()
+
+                -- Then play 4 answers
+                for i = batchStart, batchEnd do
+                    playMedia(track, answers[i] .. ".wav", 1/2, false)
+                    playChord(track, keyContext, chords[i], nil, 1/2)
+                end
+                
+                playSilent()
             end
 
             return { notes = table.concat(answers, ""), key = keyName }
@@ -1179,7 +1188,7 @@ local function main()
     math.randomseed(os.time())
     
     -- Number of audio to generate
-    local n = 3
+    local n = 100
     
     -- Store progression data
     local progressions = {}
@@ -1188,7 +1197,7 @@ local function main()
     -- Generate
     for i = 1, n do
         -- Execute generator and get results
-        local result = executeChordProgressionGenerator(generateMelodicDictationHarmonicMinorVersionAudio)
+        local result = executeChordProgressionGenerator(generateChordPassiveAudio)
         
         -- Store progression data
         local trackIndex = string.format("%03d", i)

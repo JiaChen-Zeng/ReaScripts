@@ -172,8 +172,8 @@ local JIACHEN_CONTROLLER = {
   [4] = { VSX = {_action = to_mute(true)} },
   [5] = { VSX = {_action = to_mute(true)} },
   
-  [10] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Howie Weinberg")} } },
-  [11] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("HD Linear 2")} } },
+  [10] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Sonoma")} } },
+  [11] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Human Linear")} } },
   [12] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Steven Mono")} } },
   [13] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Zuma Far")} } },
   [14] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("SUV")} } },

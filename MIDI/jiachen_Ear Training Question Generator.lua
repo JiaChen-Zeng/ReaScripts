@@ -149,6 +149,10 @@ end
 local Chord = {}
 Chord.__index = Chord
 
+Chord.MAJOR_TRIAD = {0, 4, 7}
+Chord.MINOR_TRIAD = {0, 3, 7}
+Chord.DIMINISHED_TRIAD = {0, 3, 6}
+
 function Chord.new(...)
     local self = setmetatable({}, Chord)
     self.notes = {}
@@ -191,6 +195,39 @@ function Chord.newDiatonicTriad(degree, octaveOffset, inversion)
         chord.notes[2].octaveOffset = chord.notes[2].octaveOffset + 1
     end
     
+    return chord
+end
+
+-- Create a chord from a scale degree with specified intervals
+-- degree: Scale degree (1-7)
+-- intervals: Array of semitone intervals from the root (e.g., [0, 4, 7] for minor triad)
+-- octaveOffset: Global octave offset for the chord (default 0)
+-- inversion: Chord inversion (0 for root position, 1 for first inversion, etc.)
+function Chord.newScaleChord(degree, intervals, octaveOffset, inversion)
+    octaveOffset = octaveOffset or 0
+    inversion = inversion or 0
+
+    -- Validate inputs
+    assert(type(intervals) == "table", "Intervals must be a table")
+    assert(#intervals > 0, "Intervals table cannot be empty")
+
+    -- Create chord notes
+    local notes = {}
+    for i, interval in ipairs(intervals) do
+        local note = ScaleNote.new(degree, octaveOffset)
+        note.alteration = interval
+        table.insert(notes, note)
+    end
+
+    local chord = Chord.new(table.unpack(notes))
+
+    -- Apply inversion
+    if inversion > 0 and inversion < #notes then
+        for i = 1, inversion do
+            chord.notes[i].octaveOffset = chord.notes[i].octaveOffset + 1
+        end
+    end
+
     return chord
 end
 
@@ -307,7 +344,8 @@ function KeyContext.new(rootNote, baseOctave, scalePattern)
     local self = setmetatable({}, KeyContext)
     self.rootNote = rootNote or 0  -- 0 for C, 1 for C#, etc.
     self.baseOctave = baseOctave or 4  -- MIDI octave number (middle C is in octave 4). WARNING: -1 is the lowest for MIDI 0~11
-    self.scalePattern = scalePattern or {0, 2, 4, 5, 7, 9, 11}  -- Default to major scale
+    assert(0 < #scalePattern, "Need a valid scale pattern")
+    self.scalePattern = scalePattern  -- Default to major scale
     return self
 end
 
@@ -334,12 +372,49 @@ function KeyContext:getScaleTypeName()
     return "Scale"
 end
 
+-- Create a random key context where one octave fits within the given MIDI range
+-- DerivedKeyContext: subclasses
+-- midiLow: lowest acceptable MIDI note
+-- midiHigh: highest acceptable MIDI note
+function KeyContext.newRandom(DerivedKeyContext, midiLow, midiHigh)
+    -- Validate input
+    assert(DerivedKeyContext, "Need a valid key context")
+    assert(midiLow < midiHigh, "midiLow must be less than midiHigh")
+
+    -- Find the highest note in the scale pattern
+    local highestInterval = 0
+    for _, interval in ipairs(DerivedKeyContext.SCALE_PATTERN) do
+        if interval > highestInterval then
+            highestInterval = interval
+        end
+    end
+
+    -- Calculate available range for root note
+    local availableRootMin = midiLow
+    local availableRootMax = midiHigh - highestInterval
+
+    -- Make sure we have a valid range
+    assert(availableRootMin <= availableRootMax, "MIDI range too small for this scale")
+
+    -- Pick a random root MIDI note within the valid range
+    local rootMidi = math.random(availableRootMin, availableRootMax)
+
+    -- Calculate root note and octave
+    local rootNote = rootMidi % 12
+    local baseOctave = math.floor(rootMidi / 12)
+
+    -- Return KeyContext instance
+    return DerivedKeyContext.new(rootNote, baseOctave)
+end
+
 -- MajorKeyContext Class
 local MajorKeyContext = setmetatable({}, {__index = KeyContext})
 MajorKeyContext.__index = MajorKeyContext
 
+MajorKeyContext.SCALE_PATTERN = {0, 2, 4, 5, 7, 9, 11}
+
 function MajorKeyContext.new(rootNote, baseOctave)
-    local self = KeyContext.new(rootNote, baseOctave, {0, 2, 4, 5, 7, 9, 11})
+    local self = KeyContext.new(rootNote, baseOctave, MajorKeyContext.SCALE_PATTERN)
     return setmetatable(self, MajorKeyContext)
 end
 
@@ -351,15 +426,35 @@ end
 local HarmonicMinorKeyContext = setmetatable({}, {__index = KeyContext})
 HarmonicMinorKeyContext.__index = HarmonicMinorKeyContext
 
+HarmonicMinorKeyContext.SCALE_PATTERN = {0, 2, 3, 5, 7, 8, 11}
+
 function HarmonicMinorKeyContext.new(rootNote, baseOctave)
-    -- Harmonic minor scale pattern: 0,2,3,5,7,8,11
-    local self = KeyContext.new(rootNote, baseOctave, {0, 2, 3, 5, 7, 8, 11})
+    local self = KeyContext.new(rootNote, baseOctave, HarmonicMinorKeyContext.SCALE_PATTERN)
     return setmetatable(self, HarmonicMinorKeyContext)
 end
 
 function HarmonicMinorKeyContext:getScaleTypeName()
     return "Harmonic Minor"
 end
+
+-- HarmonicMinorKeyContext inherits random function from KeyContext
+
+-- Natural Minor Key Context
+local NaturalMinorKeyContext = setmetatable({}, {__index = KeyContext})
+NaturalMinorKeyContext.__index = NaturalMinorKeyContext
+
+NaturalMinorKeyContext.SCALE_PATTERN = {0, 2, 3, 5, 7, 8, 10}
+
+function NaturalMinorKeyContext.new(rootNote, baseOctave)
+    local self = KeyContext.new(rootNote, baseOctave, NaturalMinorKeyContext.SCALE_PATTERN)
+    return setmetatable(self, NaturalMinorKeyContext)
+end
+
+function NaturalMinorKeyContext:getScaleTypeName()
+    return "Natural Minor"
+end
+
+-- NaturalMinorKeyContext inherits random function from KeyContext
 
 ---------------------------------------------------------------
 -- UnivocalKeyValidator Class
@@ -451,6 +546,8 @@ local function getCurrentMidiItem(track)
         -- Create a new MIDI item with initial minimal length
         currentMidiItem = reaper.CreateNewMIDIItemInProj(track, cursorPos, cursorPos + getDefaultNoteLength())
         currentMidiTake = reaper.GetActiveTake(currentMidiItem)
+        
+        reaper.SetMediaItemInfo_Value(currentMidiItem, "B_LOOPSRC", 0)
     else
         -- Check if we need to extend the MIDI item
         local itemStart = reaper.GetMediaItemInfo_Value(currentMidiItem, "D_POSITION")
@@ -1024,7 +1121,7 @@ end
 ---------------------------------------------------------------
 
 -- Generate chord progression
-local function generateChordPassiveAudio(track)
+local function generateChordAudio(track)
     -- Define factory callback for chord generation
     local factoryCallback = function(scaleNote)
         -- Only allow degrees that the user would like to train
@@ -1033,9 +1130,13 @@ local function generateChordPassiveAudio(track)
 
         -- Create a diatonic triad with the degree
         local chord = Chord.newDiatonicTriad(scaleNote.degree, scaleNote.octaveOffset)
-
-        -- Return both the chord and the degree as the answe=
-        return chord, scaleNote.degree
+        -- 50% chance to make V major chord 
+        if scaleNote.degree == 5 and math.random() < 0.5 then
+            chord = Chord.newScaleChord(scaleNote.degree, Chord.MAJOR_TRIAD, scaleNote.octaveOffset)
+            return chord, "5M"
+        else
+            return chord, scaleNote.degree
+        end
     end
 
     -- Keep generating until all scale degrees are used
@@ -1043,8 +1144,7 @@ local function generateChordPassiveAudio(track)
         -- Create a random key context
         local key = math.random(0, 11) -- 0 for C, 1 for C#, etc.
         local baseOctave = math.random(3, 4) -- Octaves 3-4
-        local keyContext = MajorKeyContext.new(key, baseOctave)
-
+        local keyContext = KeyContext.newRandom(NaturalMinorKeyContext, 41, 89)
         -- Create key validator
         local validator = UnivocalKeyValidator.new()
 
@@ -1054,7 +1154,7 @@ local function generateChordPassiveAudio(track)
                 factoryCallback,
                 {lo = 41, hi = 89}, -- MIDI range: F2-F5
                 {mean = 3, stdDev = 4}, -- Movement parameters (absolute distance)
-                {noRepeat = true, allowNonDiatonic = false, maxAnswerRepeat = 2} -- Options
+                {noRepeat = true, allowNonDiatonic = true, maxAnswerRepeat = 2} -- Options
         )
 
         -- Generate many chords
@@ -1062,6 +1162,84 @@ local function generateChordPassiveAudio(track)
         local answers = {}
         local keyName = keyContext:getKeyName()
         local chordCount = 20
+
+        for i = 1, chordCount do
+            local chord, degree = generator:next()
+            assert(chord, "generator:next() failed to generate an item.")
+
+            table.insert(chords, chord)
+
+            -- Add chord to validator
+            validator:add(chord)
+
+            -- Add to played chords string
+            table.insert(answers, degree)
+        end
+
+        -- Check if we generated all 8 chords and the key is validated
+        if validator:validate() then
+            playSilent(1/2) -- Prevent play fading in some audio players
+
+            playChord(track, keyContext, Chord.newDiatonicTriad(1), nil, 1/2)
+            playChord(track, keyContext, Chord.newDiatonicTriad(4), nil, 1/4)
+            playChord(track, keyContext, Chord.newScaleChord(5, Chord.MAJOR_TRIAD), nil, 1/4)
+            playChord(track, keyContext, Chord.newDiatonicTriad(1), nil, 1)
+
+            playSilent()
+
+            for j = 1, chordCount do
+                playChord(track, keyContext, chords[j], nil, 1)
+                
+                playSilent(1/2)
+                
+                playMedia(track, answers[j] .. ".wav", 1/2, false)
+                playChord(track, keyContext, chords[j], nil, 1/2)
+                
+                playSilent()
+            end
+
+            return { notes = table.concat(answers, ""), key = keyName }
+        end
+    end
+end
+
+-- Generate chord progression
+local function generateChordArpeggioInGroupAudio(track)
+    -- Define factory callback for chord generation
+    local factoryCallback = function(scaleNote)
+        -- Only allow degrees that the user would like to train
+        local degreeToTrain = "1234567"
+        if not string.find(degreeToTrain, scaleNote.degree) then return nil end
+
+        -- Create a diatonic triad with the degree
+        local chord = Chord.newDiatonicTriad(scaleNote.degree, scaleNote.octaveOffset)
+        return chord, scaleNote.degree
+    end
+
+    -- Keep generating until all scale degrees are used
+    while true do
+        -- Create a random key context
+        local key = math.random(0, 11) -- 0 for C, 1 for C#, etc.
+        local baseOctave = math.random(3, 4) -- Octaves 3-4
+        --local keyContext = NaturalMinorKeyContext.new(key, baseOctave)
+        local keyContext = KeyContext.newRandom(MajorKeyContext, 41, 89)
+        -- Create key validator
+        local validator = UnivocalKeyValidator.new()
+
+        -- Create generator
+        local generator = Generator.new(
+                keyContext,
+                factoryCallback,
+                {lo = 41, hi = 89}, -- MIDI range: F2-F5
+                {mean = 3, stdDev = 4}, -- Movement parameters (absolute distance)
+                {noRepeat = true, allowNonDiatonic = true, maxAnswerRepeat = 2} -- Options
+        )
+
+        -- Generate many chords
+        local chords = {}
+        local answers = {}
+        local keyName = keyContext:getKeyName()
+        local chordCount = 16
 
         for i = 1, chordCount do
             local chord, degree = generator:next()
@@ -1090,10 +1268,12 @@ local function generateChordPassiveAudio(track)
             -- Play the chords in batches of 4
             for batchStart = 1, #chords, 4 do
                 local batchEnd = math.min(batchStart + 3, #chords)
-
+                
                 -- Play 4 chords consecutively
+                local arpeggiations = {}
                 for i = batchStart, batchEnd do
-                    playChord(track, keyContext, chords[i])
+                    arpeggiations[i] = math.random(1, 2) == 1 and "123" or "321"
+                    playChord(track, keyContext, chords[i], arpeggiations[i])
                 end
 
                 playSilent()
@@ -1101,9 +1281,9 @@ local function generateChordPassiveAudio(track)
                 -- Then play 4 answers
                 for i = batchStart, batchEnd do
                     playMedia(track, answers[i] .. ".wav", 1/2, false)
-                    playChord(track, keyContext, chords[i], nil, 1/2)
+                    playChord(track, keyContext, chords[i], arpeggiations[i], 1/2)
                 end
-                
+
                 playSilent()
             end
 
@@ -1197,7 +1377,7 @@ local function main()
     -- Generate
     for i = 1, n do
         -- Execute generator and get results
-        local result = executeChordProgressionGenerator(generateChordPassiveAudio)
+        local result = executeChordProgressionGenerator(generateChordArpeggioInGroupAudio)
         
         -- Store progression data
         local trackIndex = string.format("%03d", i)

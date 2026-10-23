@@ -1,6 +1,6 @@
 -- @description MIDI Mixer Controller
 -- @author Jiachen
--- @version 1.4.7
+-- @version 1.4.8
 
 --#region CONSTANTS
 
@@ -129,24 +129,32 @@ end
 local function to_monitor_speaker_bypass(bypass)
   return function(_)
     local master = reaper.GetMasterTrack(THIS_PROJECT)
+    local gain_fx, arc_fx
     for i = 0, reaper.TrackFX_GetRecCount(master) - 1 do
       local fx = 0x1000000 + i
       local ok, name = reaper.TrackFX_GetFXName(master, fx)
-      if ok and name == "VST3: kHs Gain (Kilohearts)" then
-        -- This monitoring instance is configured at 0% gain.
-        -- Bypass = speakers on; enabled = speakers muted.
-        local gain = reaper.TrackFX_GetParam(master, fx, 1)
-        if math.abs(gain) > 0.00001 then
-          error("Monitoring FX kHs Gain is no longer 0%; refusing speaker switching")
-        end
-        to_bypass(bypass)(master, fx, 127)
-        if reaper.TrackFX_GetEnabled(master, fx) == bypass then
-          error("Failed to switch Monitoring FX kHs Gain bypass")
-        end
-        return
-      end
+      if ok and name == "VST3: kHs Gain (Kilohearts)" then gain_fx = fx end
+      if ok and name == "VST3: ARC 4 (IK Multimedia)" then arc_fx = fx end
     end
-    error("Monitoring FX kHs Gain not found")
+    if not gain_fx or not arc_fx then error("Monitoring FX: kHs Gain or ARC 4 not found") end
+    if math.abs(reaper.TrackFX_GetParam(master, gain_fx, 1)) > 0.00001 then
+      error("Monitoring FX kHs Gain is no longer 0%; refusing speaker switching")
+    end
+
+    -- kHs Gain is BEFORE ARC 4. Keep the existing FX order.
+    if bypass then -- Speakers on: enable correction before unmuting
+      to_bypass(false)(master, arc_fx, 127)
+      if not reaper.TrackFX_GetEnabled(master, arc_fx) then error("Failed to enable ARC 4") end
+      to_bypass(true)(master, gain_fx, 127)
+    else -- Speakers off: mute first, then bypass correction
+      to_bypass(false)(master, gain_fx, 127)
+      if not reaper.TrackFX_GetEnabled(master, gain_fx) then error("Failed to mute speakers") end
+      to_bypass(true)(master, arc_fx, 127)
+    end
+    if reaper.TrackFX_GetEnabled(master, gain_fx) == bypass or
+       reaper.TrackFX_GetEnabled(master, arc_fx) ~= bypass then
+      error("Failed to switch Monitoring FX speaker state")
+    end
   end
 end
 

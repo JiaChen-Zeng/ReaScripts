@@ -1,6 +1,6 @@
 -- @description MIDI Mixer Controller
 -- @author Jiachen
--- @version 1.5.0
+-- @version 1.5.1
 
 --#region CONSTANTS
 
@@ -272,6 +272,8 @@ local function update_monitor_transition()
     end
     -- Restore normal send values behind the hard mutes, not zero in the RPP.
     monitor_transition = nil
+    -- Save only after both fades and final mute/FX state have completed.
+    reaper.Main_SaveProject(THIS_PROJECT, false)
   end
 end
 
@@ -431,7 +433,6 @@ local function process_mixing_control(controller, cc, cc_value)
     monitor_transition = nil
   end
 
-  local saved_before = reaper.IsProjectDirty() -- Auto save where possible
   reaper.Undo_BeginBlock2(THIS_PROJECT)
   reaper.PreventUIRefresh(1)
 
@@ -451,7 +452,9 @@ local function process_mixing_control(controller, cc, cc_value)
   reaper.Undo_EndBlock2(THIS_PROJECT, SCRIPT_IDENTIFIER, -1)
   reaper.TrackList_AdjustWindows(false)
 
-  if ok and saved_before and not monitor_transition then
+  -- Save every successful immediate action, even if the project was clean.
+  -- A running fade will save itself once it reaches the final state.
+  if ok and not monitor_transition then
     reaper.Main_SaveProject(THIS_PROJECT, false)
   end
 

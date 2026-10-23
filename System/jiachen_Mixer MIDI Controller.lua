@@ -1,6 +1,6 @@
 -- @description MIDI Mixer Controller
 -- @author Jiachen
--- @version 1.4.0
+-- @version 1.4.7
 
 --#region CONSTANTS
 
@@ -126,6 +126,30 @@ local function to_bypass(bypass)
   end
 end
 
+local function to_monitor_speaker_bypass(bypass)
+  return function(_)
+    local master = reaper.GetMasterTrack(THIS_PROJECT)
+    for i = 0, reaper.TrackFX_GetRecCount(master) - 1 do
+      local fx = 0x1000000 + i
+      local ok, name = reaper.TrackFX_GetFXName(master, fx)
+      if ok and name == "VST3: kHs Gain (Kilohearts)" then
+        -- This monitoring instance is configured at 0% gain.
+        -- Bypass = speakers on; enabled = speakers muted.
+        local gain = reaper.TrackFX_GetParam(master, fx, 1)
+        if math.abs(gain) > 0.00001 then
+          error("Monitoring FX kHs Gain is no longer 0%; refusing speaker switching")
+        end
+        to_bypass(bypass)(master, fx, 127)
+        if reaper.TrackFX_GetEnabled(master, fx) == bypass then
+          error("Failed to switch Monitoring FX kHs Gain bypass")
+        end
+        return
+      end
+    end
+    error("Monitoring FX kHs Gain not found")
+  end
+end
+
 local function to_map(min, max) -- Untested
   -- map [min, max] if params passed
   if min == nil and max == nil then
@@ -163,21 +187,28 @@ local function to_send(receive_track_name, send)
 end
 
 local JIACHEN_CONTROLLER = {
-  [0] = { VSX = {_action = to_mute(true)} },
-  [1] = { VSX = {_action = to_mute(false)} },
-  [2] = function (value)
-    return {VSX = {_action = to_mute(value ~= 127)}}
+  -- Speaker correction and mute are in global Monitoring FX, after the meters.
+  -- Non-Inst + Inst -> PreMaster -> built-in Master / VSX.
+  -- Speaker mute bypasses the global 0%-gain Monitoring FX via PreMaster dispatch.
+  [0] = { PreMaster = {_action = to_monitor_speaker_bypass(true)},  VSX = {_action = to_mute(true)} },
+  [1] = { PreMaster = {_action = to_monitor_speaker_bypass(false)}, VSX = {_action = to_mute(false)} },
+  [2] = function(value)
+    return {
+      PreMaster = {_action = to_monitor_speaker_bypass(true)},
+      VSX = {_action = to_mute(value ~= 127)}
+    }
   end,
-  [3] = { VSX = {_action = to_mute(true)} },
-  [4] = { VSX = {_action = to_mute(true)} },
-  [5] = { VSX = {_action = to_mute(true)} },
-  
-  [10] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Sonoma")} } },
+  [3] = { PreMaster = {_action = to_monitor_speaker_bypass(false)}, VSX = {_action = to_mute(true)} },
+  [4] = { PreMaster = {_action = to_monitor_speaker_bypass(false)}, VSX = {_action = to_mute(true)} },
+  [5] = { PreMaster = {_action = to_monitor_speaker_bypass(false)}, VSX = {_action = to_mute(true)} },
+  [6] = { PreMaster = {_action = to_monitor_speaker_bypass(false)}, VSX = {_action = to_mute(true)} },
+
+  [10] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Spitfire LA")} } },
   [11] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Human Linear")} } },
   [12] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Steven Mono")} } },
-  [13] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Zuma Far")} } },
-  [14] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("SUV")} } },
-  [15] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Club")} } },
+  [13] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Audiophile")} } },
+  [14] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("SUV 2")} } },
+  [15] = { VSX = { ["VST3: VSX (Steven Slate)"] = {_action = to_preset("Club Indey")} } },
   
   [20] = function (value)
     return { ["Non-Inst"] = { ["VST3: kHs Gain (Kilohearts)"] = { _action = to_bypass(value ~= 127) } } }
@@ -185,7 +216,6 @@ local JIACHEN_CONTROLLER = {
   
   [21] = function (value)
     return {
-      ["Hard Synth Clean"] = {_action = to_send("Inst", value == 127)},
       ["Soft Synth"] = {_action = to_mute_all(value == 127)},
     }
   end,
@@ -194,20 +224,16 @@ local JIACHEN_CONTROLLER = {
   end,
   
   [30] = {
-    Base = { ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = to_bypass(true)} },
-    Surround = {_action = to_mute(true)}
+    PreMaster = { ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = to_bypass(true)} }
   },
   [31] = {
-    Base = { ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = {to_preset("Cross"), to_bypass(false)}} },
-    Surround = {_action = to_mute(true)}
+    PreMaster = { ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = {to_preset("Cross"), to_bypass(false)}} }
   },
   [32] = {
-    Base = { ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = {to_preset("Mono"), to_bypass(false)}} },
-    Surround = {_action = to_mute(true)}
+    PreMaster = { ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = {to_preset("Mono"), to_bypass(false)}} }
   },
   [33] = {
-    Base = { ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = to_bypass(true)} },
-    Surround = {_action = to_mute(false)}
+    PreMaster = { ["VST3: kHs Channel Mixer (Kilohearts)"] = {_action = to_bypass(true)} }
   }
 }
 
@@ -279,19 +305,23 @@ local function process_mixing_control(controller, cc, cc_value)
   reaper.Undo_BeginBlock2(THIS_PROJECT)
   reaper.PreventUIRefresh(1)
 
-  for track_name, track_actions in pairs(actions) do
-    process_track_actions(get_track_by_name(track_name), track_actions, cc_value)
-  end
+  local ok, control_error = pcall(function()
+    for track_name, track_actions in pairs(actions) do
+      process_track_actions(get_track_by_name(track_name), track_actions, cc_value)
+    end
+  end)
 
+  -- Balance UI refresh and undo even if a track or FX is missing.
   reaper.PreventUIRefresh(-1)
   reaper.Undo_EndBlock2(THIS_PROJECT, SCRIPT_IDENTIFIER, -1)
   reaper.TrackList_AdjustWindows(false)
-  
-  if saved_before then
+
+  if ok and saved_before then
     reaper.Main_SaveProject(THIS_PROJECT, false)
   end
-  
+
   reaper.SelectProjectInstance(current_project)
+  if not ok then error(control_error) end
 end
 
 local function process_midi_messages(device_to_monitor, channel_to_monitor)
@@ -313,7 +343,11 @@ local function process_midi_messages(device_to_monitor, channel_to_monitor)
       
         local cc_number = string.byte(data, 2)
         local cc_value = string.byte(data, 3)
-        process_mixing_control(JIACHEN_CONTROLLER, cc_number, cc_value)
+        local ok, control_error = pcall(process_mixing_control, JIACHEN_CONTROLLER, cc_number, cc_value)
+        if not ok then
+          -- Preserve MIDI processing if an outdated track/FX mapping fails.
+          reaper.SetExtState(SCRIPT_IDENTIFIER, "LastControlError", tostring(control_error), false)
+        end
       end
 
       ::continue::

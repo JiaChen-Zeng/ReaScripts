@@ -1,6 +1,6 @@
 -- @description MIDI Mixer Controller
 -- @author Jiachen
--- @version 1.8.2
+-- @version 1.8.3
 
 -- Current mixer layout (documentation only; no FX index/order locking):
 -- Global Monitoring FX: [0] TR5 Metering, [1] TDR Prism,
@@ -194,11 +194,11 @@ local function request_monitor_mode(mode)
   local pending_arc = false
   if want_speaker and not reaper.TrackFX_GetEnabled(master, arc_fx) then
     -- ARC 4 is enabled only when the final speaker gain has reached silence.
-    set_fade_target(master, speaker_fx, speaker_param, false)
     if reaper.TrackFX_GetParamNormalized(master, speaker_fx, speaker_volume) == 0 then
       set_arc4_enabled(master, arc_fx, true)
       set_fade_target(master, speaker_fx, speaker_param, true)
     else
+      set_fade_target(master, speaker_fx, speaker_param, false)
       pending_arc = true
     end
   else

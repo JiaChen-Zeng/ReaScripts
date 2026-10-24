@@ -1,12 +1,12 @@
 -- @description MIDI Mixer Controller
 -- @author Jiachen
--- @version 1.8.1
+-- @version 1.8.2
 
 -- Current mixer layout (documentation only; no FX index/order locking):
 -- Global Monitoring FX: [0] TR5 Metering, [1] TDR Prism,
 --                       [2] Youlean Loudness Meter 2,
---                       [3] MUtility (Speaker Fade), [4] ARC 4.
--- VSX track FX:         [0] VSX, [1] MUtility (Headphone Fade).
+--                       [3] MUtility (Silence Toggle), [4] ARC 4.
+-- VSX track FX:         [0] VSX, [1] MUtility (Silence Toggle).
 -- MUtility Switch 0 = silence, 1 = 0 dB; set Switch Time in each MUtility GUI.
 -- The normalized Volume ramps linearly, with audio amplitude ~= x^2.
 -- The controller changes only each Switch target.
@@ -179,9 +179,9 @@ local function request_monitor_mode(mode)
 
   local master, arc_fx, speaker_fx = get_monitor_speaker_fx()
   local vsx, headphone_fx = get_headphone_fade_fx()
-  local speaker_param = get_named_fx_param(master, speaker_fx, "Speaker Fade")
+  local speaker_param = get_named_fx_param(master, speaker_fx, "Silence Toggle")
   local speaker_volume = get_named_fx_param(master, speaker_fx, "Volume (Basic)")
-  local headphone_param = get_named_fx_param(vsx, headphone_fx, "Headphone Fade")
+  local headphone_param = get_named_fx_param(vsx, headphone_fx, "Silence Toggle")
   local headphone_volume = get_named_fx_param(vsx, headphone_fx, "Volume (Basic)")
 
   -- Wake the VSX processing chain before its fade-in.

@@ -1,6 +1,16 @@
 -- @description MIDI Mixer Controller
 -- @author Jiachen
--- @version 1.5.1
+-- @version 1.8.0
+
+-- Current mixer layout (documentation only; no FX index/order locking):
+-- Global Monitoring FX: [0] TR5 Metering, [1] TDR Prism,
+--                       [2] Youlean Loudness Meter 2, [3] ARC 4,
+--                       [4] MUtility (Speaker Fade, 300 ms).
+-- VSX track FX:         [0] VSX, [1] MUtility (Headphone Fade, 300 ms).
+-- MUtility Switch 0 = silence, 1 = 0 dB; Switch Time = 300 ms in FX.
+-- The normalized Volume ramps linearly, with audio amplitude ~= x^2.
+-- The controller changes only each Switch target.
+-- All FX and parameter locations below are resolved by name.
 
 --#region CONSTANTS
 
@@ -57,14 +67,6 @@ end
 --#endregion
 
 --#region CONTROLLER ACTION FUNCTIONS
-
-local function to_mute(mute)
-  return function(track)
-    local mute_number
-    if mute then mute_number = 1 else mute_number = 0 end
-    reaper.SetMediaTrackInfo_Value(track, "B_MUTE", mute_number)
-  end
-end
 
 local function to_mute_all(mute)
   return function(track)
@@ -126,153 +128,111 @@ local function to_bypass(bypass)
   end
 end
 
+-- Find the speaker's ARC 4 and MUtility in global Monitoring FX by name.
 local function get_monitor_speaker_fx()
   local master = reaper.GetMasterTrack(THIS_PROJECT)
-  local gain_fx, arc_fx
+  local arc_fx, fade_fx
   for i = 0, reaper.TrackFX_GetRecCount(master) - 1 do
     local fx = 0x1000000 + i
-    local ok, name = reaper.TrackFX_GetFXName(master, fx)
-    if ok and name == "VST3: kHs Gain (Kilohearts)" then gain_fx = fx end
-    if ok and name == "VST3: ARC 4 (IK Multimedia)" then arc_fx = fx end
+    local _, name = reaper.TrackFX_GetFXName(master, fx)
+    if name == "VST3: ARC 4 (IK Multimedia)" then arc_fx = fx end
+    if name == "VST3: MUtility (MeldaProduction)" then fade_fx = fx end
   end
-  if not gain_fx or not arc_fx then error("Monitoring FX: kHs Gain or ARC 4 not found") end
-  if math.abs(reaper.TrackFX_GetParam(master, gain_fx, 1)) > 0.00001 then
-    error("Monitoring FX kHs Gain is no longer 0%; refusing speaker switching")
+  if not arc_fx or not fade_fx then
+    error("Monitoring FX: ARC 4 or MUtility missing")
   end
-  return master, gain_fx, arc_fx
+  return master, arc_fx, fade_fx
 end
 
-local function to_monitor_speaker_bypass(bypass)
-  return function(_)
-    local master, gain_fx, arc_fx = get_monitor_speaker_fx()
-
-    -- kHs Gain is BEFORE ARC 4. Keep the existing FX order.
-    if bypass then -- Speakers on: enable correction before unmuting
-      to_bypass(false)(master, arc_fx, 127)
-      if not reaper.TrackFX_GetEnabled(master, arc_fx) then error("Failed to enable ARC 4") end
-      to_bypass(true)(master, gain_fx, 127)
-    else -- Speakers off: mute first, then bypass correction
-      to_bypass(false)(master, gain_fx, 127)
-      if not reaper.TrackFX_GetEnabled(master, gain_fx) then error("Failed to mute speakers") end
-      to_bypass(true)(master, arc_fx, 127)
-    end
-    if reaper.TrackFX_GetEnabled(master, gain_fx) == bypass or
-       reaper.TrackFX_GetEnabled(master, arc_fx) ~= bypass then
-      error("Failed to switch Monitoring FX speaker state")
-    end
-  end
-end
-
--- Fade dedicated hardware sends only. The parallel Master L/R output is untouched.
-local MONITOR_FADE_MS = 300
-local monitor_transition = nil
-local monitor_normal_gain = nil
-
-local function find_monitor_output(track, destination, name)
-  local match = nil
-  for i = 0, reaper.GetTrackNumSends(track, 1) - 1 do
-    local channel = math.floor(reaper.GetTrackSendInfo_Value(track, 1, i, "I_DSTCHAN")) & 1023
-    if channel == destination then
-      if match ~= nil then error("Duplicate monitoring output: " .. name) end
-      match = i
-    end
-  end
-  if match == nil then error("Missing monitoring output: " .. name) end
-  return {track = track, index = match, name = name}
-end
-
-local function get_monitor_outputs()
+local function get_headphone_fade_fx()
   local vsx = get_track_by_name("VSX")
-  return {
-    speaker = find_monitor_output(reaper.GetMasterTrack(THIS_PROJECT), 0, "Analogue 1/2"),
-    vsx = find_monitor_output(vsx, 6, "VSX L/R")
-  }, vsx
+  for i = 0, reaper.TrackFX_GetCount(vsx) - 1 do
+    local _, name = reaper.TrackFX_GetFXName(vsx, i)
+    if name == "VST3: MUtility (MeldaProduction)" then return vsx, i end
+  end
+  error("VSX: MUtility not found")
 end
 
-local function get_monitor_volume(output)
-  return reaper.GetTrackSendInfo_Value(output.track, 1, output.index, "D_VOL")
+local function get_named_fx_param(track, fx, wanted_name)
+  for i = 0, reaper.TrackFX_GetNumParams(track, fx) - 1 do
+    local _, name = reaper.TrackFX_GetParamName(track, fx, i)
+    if name == wanted_name then return i end
+  end
+  error("MUtility parameter missing: " .. wanted_name)
 end
 
-local function set_monitor_volume(output, volume)
-  if not reaper.SetTrackSendInfo_Value(output.track, 1, output.index, "D_VOL", volume) then
-    error("Cannot set monitoring output: " .. output.name)
+local function set_arc4_enabled(master, arc_fx, enabled)
+  if reaper.TrackFX_GetEnabled(master, arc_fx) ~= enabled then
+    reaper.TrackFX_SetEnabled(master, arc_fx, enabled)
   end
 end
 
-local function request_monitor_mode(mode, duration_ms)
-  if mode ~= "speaker" and mode ~= "vsx" and mode ~= "both" and mode ~= "off" then
-    error("Unknown monitoring mode: " .. tostring(mode))
-  end
+local function set_fade_target(track, fx, param, on)
+  reaper.TrackFX_SetParamNormalized(track, fx, param, on and 1 or 0)
+end
 
-  local outputs, vsx = get_monitor_outputs()
-  local master, gain_fx = get_monitor_speaker_fx()
-  local speaker_muted = reaper.TrackFX_GetEnabled(master, gain_fx)
-  local vsx_muted = reaper.GetMediaTrackInfo_Value(vsx, "B_MUTE") >= 0.5
-  if not monitor_transition then
-    -- In steady states our send levels are restored, including when muted.
-    monitor_normal_gain = {
-      speaker = get_monitor_volume(outputs.speaker),
-      vsx = get_monitor_volume(outputs.vsx)
-    }
-  end
+local monitor_transition = nil
 
-  local from_speaker = speaker_muted and 0 or get_monitor_volume(outputs.speaker)
-  local from_vsx = vsx_muted and 0 or get_monitor_volume(outputs.vsx)
+local function request_monitor_mode(mode)
   local want_speaker = mode == "speaker" or mode == "both"
   local want_vsx = mode == "vsx" or mode == "both"
 
-  -- Set an incoming path to zero BEFORE taking off its hard mute.
-  if want_speaker and speaker_muted then
-    set_monitor_volume(outputs.speaker, 0)
-    to_monitor_speaker_bypass(true)(nil) -- ARC 4 on before kHs Gain bypass
-  end
-  if want_vsx and vsx_muted then
-    set_monitor_volume(outputs.vsx, 0)
-    reaper.SetMediaTrackInfo_Value(vsx, "B_MUTE", 0)
+  local master, arc_fx, speaker_fx = get_monitor_speaker_fx()
+  local vsx, headphone_fx = get_headphone_fade_fx()
+  local speaker_param = get_named_fx_param(master, speaker_fx, "Speaker Fade")
+  local speaker_volume = get_named_fx_param(master, speaker_fx, "Volume (Basic)")
+  local headphone_param = get_named_fx_param(vsx, headphone_fx, "Headphone Fade")
+  local headphone_volume = get_named_fx_param(vsx, headphone_fx, "Volume (Basic)")
+
+  -- No hard mute, FX bypass, or hardware-send volume writes on VSX.
+  -- Both MUtility instances perform their entire fade internally.
+  set_fade_target(vsx, headphone_fx, headphone_param, want_vsx)
+
+  local pending_arc = false
+  if want_speaker and not reaper.TrackFX_GetEnabled(master, arc_fx) then
+    -- ARC 4 is enabled only when the final speaker gain has reached silence.
+    set_fade_target(master, speaker_fx, speaker_param, false)
+    if reaper.TrackFX_GetParamNormalized(master, speaker_fx, speaker_volume) == 0 then
+      set_arc4_enabled(master, arc_fx, true)
+      set_fade_target(master, speaker_fx, speaker_param, true)
+    else
+      pending_arc = true
+    end
+  else
+    set_fade_target(master, speaker_fx, speaker_param, want_speaker)
   end
 
-  -- Replacing this object cancels an older fade at its current gains.
   monitor_transition = {
-    start = reaper.time_precise(),
-    duration = math.max(0, duration_ms) / 1000,
-    outputs = outputs,
-    vsx = vsx,
-    from_speaker = from_speaker,
-    from_vsx = from_vsx,
-    to_speaker = want_speaker and monitor_normal_gain.speaker or 0,
-    to_vsx = want_vsx and monitor_normal_gain.vsx or 0,
-    want_speaker = want_speaker,
-    want_vsx = want_vsx
+    master = master, arc_fx = arc_fx,
+    speaker_fx = speaker_fx, speaker_param = speaker_param, speaker_volume = speaker_volume,
+    vsx = vsx, headphone_fx = headphone_fx, headphone_volume = headphone_volume,
+    want_speaker = want_speaker, want_vsx = want_vsx, pending_arc = pending_arc
   }
 end
 
 local function to_monitor_mode(mode)
-  return function(_)
-    request_monitor_mode(mode, MONITOR_FADE_MS)
-  end
+  return function(_) request_monitor_mode(mode) end
 end
 
 local function update_monitor_transition()
   local tr = monitor_transition
   if not tr then return end
 
-  local t = tr.duration == 0 and 1 or math.min(1, (reaper.time_precise() - tr.start) / tr.duration)
-  set_monitor_volume(tr.outputs.speaker, tr.from_speaker + (tr.to_speaker - tr.from_speaker) * t)
-  set_monitor_volume(tr.outputs.vsx, tr.from_vsx + (tr.to_vsx - tr.from_vsx) * t)
+  if tr.pending_arc and
+     reaper.TrackFX_GetParamNormalized(tr.master, tr.speaker_fx, tr.speaker_volume) == 0 then
+    set_arc4_enabled(tr.master, tr.arc_fx, true)
+    set_fade_target(tr.master, tr.speaker_fx, tr.speaker_param, true)
+    tr.pending_arc = false
+  end
 
-  if t >= 1 then
-    -- Final hard mute happens only AFTER its send has reached zero.
-    if not tr.want_speaker then
-      to_monitor_speaker_bypass(false)(nil)
-      set_monitor_volume(tr.outputs.speaker, monitor_normal_gain.speaker)
-    end
-    if not tr.want_vsx then
-      reaper.SetMediaTrackInfo_Value(tr.vsx, "B_MUTE", 1)
-      set_monitor_volume(tr.outputs.vsx, monitor_normal_gain.vsx)
-    end
-    -- Restore normal send values behind the hard mutes, not zero in the RPP.
+  local speaker_level = reaper.TrackFX_GetParamNormalized(tr.master, tr.speaker_fx, tr.speaker_volume)
+  local headphone_level = reaper.TrackFX_GetParamNormalized(tr.vsx, tr.headphone_fx, tr.headphone_volume)
+  local speaker_end = tr.want_speaker and 1 or 0
+  local headphone_end = tr.want_vsx and 1 or 0
+
+  if not tr.pending_arc and speaker_level == speaker_end and headphone_level == headphone_end then
+    if not tr.want_speaker then set_arc4_enabled(tr.master, tr.arc_fx, false) end
     monitor_transition = nil
-    -- Save only after both fades and final mute/FX state have completed.
     reaper.Main_SaveProject(THIS_PROJECT, false)
   end
 end
@@ -314,17 +274,15 @@ local function to_send(receive_track_name, send)
 end
 
 local JIACHEN_CONTROLLER = {
-  -- Speaker correction and mute are in global Monitoring FX, after the meters.
-  -- Non-Inst + Inst -> PreMaster -> built-in Master / VSX.
-  -- Speaker mute bypasses the global 0%-gain Monitoring FX via PreMaster dispatch.
+  -- Speakers: Monitoring FX MUtility. Headphones: VSX-track MUtility.
+  -- Consumer/Phone keep independent Matrix routes; both REAPER outputs fade off.
   [0] = { PreMaster = {_action = to_monitor_mode("speaker")} },
   [1] = { PreMaster = {_action = to_monitor_mode("vsx")} },
   [2] = function(value)
     return { PreMaster = {_action = to_monitor_mode(value == 127 and "both" or "speaker")} }
   end,
-  -- Consumer and Phone retain their original immediate actions.
-  [3] = { PreMaster = {_action = to_monitor_speaker_bypass(false)}, VSX = {_action = to_mute(true)} },
-  [4] = { PreMaster = {_action = to_monitor_speaker_bypass(false)}, VSX = {_action = to_mute(true)} },
+  [3] = { PreMaster = {_action = to_monitor_mode("off")} },
+  [4] = { PreMaster = {_action = to_monitor_mode("off")} },
   [5] = { PreMaster = {_action = to_monitor_mode("off")} },
   [6] = { PreMaster = {_action = to_monitor_mode("off")} },
 
@@ -426,24 +384,12 @@ local function process_mixing_control(controller, cc, cc_value)
   local current_project = reaper.EnumProjects(-1) -- To deal with the case where mixer project is in the background, remember the current project which isn't the mixer project, do stuff and then finally switch back
   reaper.SelectProjectInstance(THIS_PROJECT)
   
-  -- Do not let a previous delayed fade re-enable Consumer / Phone outputs.
-  local interrupted = nil
-  if cc == 3 or cc == 4 then
-    interrupted = monitor_transition
-    monitor_transition = nil
-  end
-
   reaper.Undo_BeginBlock2(THIS_PROJECT)
   reaper.PreventUIRefresh(1)
 
   local ok, control_error = pcall(function()
     for track_name, track_actions in pairs(actions) do
       process_track_actions(get_track_by_name(track_name), track_actions, cc_value)
-    end
-    if interrupted then
-      -- The original immediate mutes are now in place; restore send levels.
-      set_monitor_volume(interrupted.outputs.speaker, monitor_normal_gain.speaker)
-      set_monitor_volume(interrupted.outputs.vsx, monitor_normal_gain.vsx)
     end
   end)
 

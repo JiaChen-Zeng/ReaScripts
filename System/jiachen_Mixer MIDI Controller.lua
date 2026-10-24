@@ -1,13 +1,13 @@
 -- @description MIDI Mixer Controller
 -- @author Jiachen
--- @version 1.8.0
+-- @version 1.8.1
 
 -- Current mixer layout (documentation only; no FX index/order locking):
 -- Global Monitoring FX: [0] TR5 Metering, [1] TDR Prism,
---                       [2] Youlean Loudness Meter 2, [3] ARC 4,
---                       [4] MUtility (Speaker Fade, 300 ms).
--- VSX track FX:         [0] VSX, [1] MUtility (Headphone Fade, 300 ms).
--- MUtility Switch 0 = silence, 1 = 0 dB; Switch Time = 300 ms in FX.
+--                       [2] Youlean Loudness Meter 2,
+--                       [3] MUtility (Speaker Fade), [4] ARC 4.
+-- VSX track FX:         [0] VSX, [1] MUtility (Headphone Fade).
+-- MUtility Switch 0 = silence, 1 = 0 dB; set Switch Time in each MUtility GUI.
 -- The normalized Volume ramps linearly, with audio amplitude ~= x^2.
 -- The controller changes only each Switch target.
 -- All FX and parameter locations below are resolved by name.
@@ -184,8 +184,11 @@ local function request_monitor_mode(mode)
   local headphone_param = get_named_fx_param(vsx, headphone_fx, "Headphone Fade")
   local headphone_volume = get_named_fx_param(vsx, headphone_fx, "Volume (Basic)")
 
-  -- No hard mute, FX bypass, or hardware-send volume writes on VSX.
-  -- Both MUtility instances perform their entire fade internally.
+  -- Wake the VSX processing chain before its fade-in.
+  if want_vsx and reaper.GetMediaTrackInfo_Value(vsx, "B_MUTE") ~= 0 then
+    reaper.SetMediaTrackInfo_Value(vsx, "B_MUTE", 0)
+  end
+  -- MUtility handles the fade without hardware-send volume automation.
   set_fade_target(vsx, headphone_fx, headphone_param, want_vsx)
 
   local pending_arc = false
@@ -232,6 +235,8 @@ local function update_monitor_transition()
 
   if not tr.pending_arc and speaker_level == speaker_end and headphone_level == headphone_end then
     if not tr.want_speaker then set_arc4_enabled(tr.master, tr.arc_fx, false) end
+    -- The headphone output is now silent; mute its track to stop VSX processing.
+    if not tr.want_vsx then reaper.SetMediaTrackInfo_Value(tr.vsx, "B_MUTE", 1) end
     monitor_transition = nil
     reaper.Main_SaveProject(THIS_PROJECT, false)
   end

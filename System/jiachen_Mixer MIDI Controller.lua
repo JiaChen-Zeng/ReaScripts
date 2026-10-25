@@ -1,6 +1,6 @@
 -- @description MIDI Mixer Controller
 -- @author Jiachen
--- @version 1.8.4
+-- @version 1.8.9
 
 -- Current mixer layout (documentation only; no FX index/order locking):
 -- Global Monitoring FX: [0] TR5 Metering, [1] TDR Prism,
@@ -12,6 +12,11 @@
 -- The controller changes only each Switch target.
 -- All FX and parameter locations below are resolved by name.
 
+-- Resolves the system-wide mixer project once at startup by project filename,
+-- regardless of which REAPER tab is selected. Background control uses project
+-- track/FX pointers without switching tabs. Idle saves wait ten minutes after
+-- REAPER loses focus, regardless of input in other applications.
+
 --#region CONSTANTS
 
 local SCRIPT_IDENTIFIER = "Jiachen_MIDI Mixer Controller"
@@ -19,7 +24,31 @@ local SCRIPT_IDENTIFIER = "Jiachen_MIDI Mixer Controller"
 local DEVICE_TO_MONITOR = "REAPER Mixer"
 local CHANNEL_TO_MONITOR = 16
 
-local THIS_PROJECT = reaper.EnumProjects(-1)
+local MIXER_PROJECT_NAME = "Reaper System-Wide Mixer.rpp"
+
+local function find_mixer_project()
+  local matched_project = nil
+  local i = 0
+  while true do
+    local project, filename = reaper.EnumProjects(i, "")
+    if not project then break end
+
+    -- Compare the filename only; a project may be opened from any directory.
+    local name = filename and filename:gsub("\\", "/"):match("([^/]+)$")
+    if name and name:lower() == MIXER_PROJECT_NAME:lower() then
+      if matched_project then
+        error("Multiple open mixer projects named " .. MIXER_PROJECT_NAME)
+      end
+      matched_project = project
+    end
+    i = i + 1
+  end
+  assert(matched_project, "Open mixer project not found: " .. MIXER_PROJECT_NAME)
+  return matched_project
+end
+
+local THIS_PROJECT = find_mixer_project()
+local IDLE_SAVE_SECONDS = 10 * 60
 
 --#endregion
 
@@ -40,9 +69,9 @@ end
 local MIDI_DEVICE = get_midi_device_index_by_name(DEVICE_TO_MONITOR)
 
 local function get_track_by_name(track_name)
-  local track_count = reaper.CountTracks(0)
+  local track_count = reaper.CountTracks(THIS_PROJECT)
   for i = 0, track_count - 1 do
-    local track = reaper.GetTrack(0, i)
+    local track = reaper.GetTrack(THIS_PROJECT, i)
     local _, current_track_name = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
     if current_track_name == track_name then
       return track
@@ -84,11 +113,11 @@ local function to_mute_all(mute)
     if track_depth <= 0 then return end
     
     local current_depth = 1 -- Start at 1 because we're inside a folder
-    local track_count = reaper.CountTracks(0)
+    local track_count = reaper.CountTracks(THIS_PROJECT)
     
     -- Iterate through potential child tracks
     for i = track_idx + 1, track_count - 1 do
-      local child_track = reaper.GetTrack(0, i)
+      local child_track = reaper.GetTrack(THIS_PROJECT, i)
       local child_depth = reaper.GetMediaTrackInfo_Value(child_track, "I_FOLDERDEPTH")
       
       -- Update current depth
@@ -172,6 +201,135 @@ local function set_fade_target(track, fx, param, on)
 end
 
 local monitor_transition = nil
+local mixer_save_pending = false
+local last_mixer_change_time = reaper.time_precise()
+local last_reaper_focus_time = reaper.time_precise()
+
+local function queue_mixer_save()
+  mixer_save_pending = true
+  last_mixer_change_time = reaper.time_precise()
+  reaper.MarkProjectDirty(THIS_PROJECT)
+end
+
+local function mixer_project_still_open()
+  local index = 0
+  while true do
+    local project = reaper.EnumProjects(index)
+    if not project then return false end
+    if project == THIS_PROJECT then return true end
+    index = index + 1
+  end
+end
+
+local function reaper_has_foreground()
+  -- js_ReaScriptAPI is installed with portable REAPER. Without it, do not
+  -- attempt an automatic tab switch (manual mixer-tab save still works).
+  if not (reaper.JS_Window_GetForeground and
+          reaper.JS_Window_GetRelated and
+          reaper.JS_Window_GetRoot) then return nil end
+
+  local foreground = reaper.JS_Window_GetForeground()
+  local main = reaper.GetMainHwnd()
+  if not foreground or not main then return nil end
+
+  -- The main window and docked editors are considered REAPER activity.
+  if foreground == main or reaper.JS_Window_GetRoot(foreground) == main then
+    return true
+  end
+
+  -- Treat REAPER-owned floating plugin/editor/dialog windows as activity too.
+  local window = foreground
+  for _ = 1, 16 do
+    local owner = reaper.JS_Window_GetRelated(window, "OWNER")
+    if not owner or owner == window then break end
+    if owner == main or reaper.JS_Window_GetRoot(owner) == main then
+      return true
+    end
+    window = owner
+  end
+
+  -- REAPER-created standalone windows may not be owned by its main window.
+  -- Matching the application instance covers those windows as well.
+  if reaper.JS_Window_GetLongPtr then
+    local main_instance = reaper.JS_Window_GetLongPtr(main, "INSTANCE")
+    local foreground_instance = reaper.JS_Window_GetLongPtr(foreground, "INSTANCE")
+    if main_instance and foreground_instance == main_instance then
+      return true
+    end
+  end
+
+  return false
+end
+
+local function can_idle_save()
+  if (reaper.GetAllProjectPlayStates(nil) & 4) ~= 0 then return false end
+
+  -- Standard modal dialogs disable their owner window.
+  -- If state cannot be determined, postpone the save.
+  if not reaper.JS_Window_GetLong then return false end
+  local main_window = reaper.GetMainHwnd()
+  if not main_window then return false end
+  local style = reaper.JS_Window_GetLong(main_window, "STYLE")
+  if not style or (style & 0x08000000) ~= 0 then return false end
+
+  return true
+end
+
+local function save_mixer_if_active()
+  -- Project-saving APIs may activate their target tab, so never call them
+  -- while the user is working in another project.
+  if not mixer_save_pending or monitor_transition then return end
+  if reaper.EnumProjects(-1) ~= THIS_PROJECT then return end
+
+  reaper.Main_SaveProject(THIS_PROJECT, false)
+  mixer_save_pending = false
+end
+
+local function save_mixer_if_idle()
+  if not mixer_save_pending or monitor_transition then return end
+  if reaper.EnumProjects(-1) == THIS_PROJECT then return end
+  if not mixer_project_still_open() then return end
+
+  local now = reaper.time_precise()
+  local foreground = reaper_has_foreground()
+  if foreground ~= false then
+    -- Focus in REAPER (or an undetectable foreground) postpones idle saves.
+    if foreground then last_reaper_focus_time = now end
+    return
+  end
+
+  -- Both conditions must hold. MIDI actions do not reset the REAPER focus timer,
+  -- but a recent mixer change must have had time to settle before saving.
+  if now - last_reaper_focus_time < IDLE_SAVE_SECONDS then return end
+  if now - last_mixer_change_time < IDLE_SAVE_SECONDS then return end
+  if not can_idle_save() then return end
+  if reaper_has_foreground() ~= false then return end
+
+  local selected_project = reaper.EnumProjects(-1)
+  reaper.PreventUIRefresh(1)
+  local saved, save_error = pcall(function()
+    reaper.SelectProjectInstance(THIS_PROJECT)
+    if reaper.EnumProjects(-1) ~= THIS_PROJECT then
+      error("Cannot select mixer project for idle save")
+    end
+    reaper.Main_SaveProject(THIS_PROJECT, false)
+  end)
+
+  -- Always attempt to restore the previous tab, even if the save failed.
+  local restored, restore_error = pcall(function()
+    if reaper.EnumProjects(-1) ~= selected_project then
+      reaper.SelectProjectInstance(selected_project)
+    end
+    if reaper.EnumProjects(-1) ~= selected_project then
+      error("Cannot restore the project after idle save")
+    end
+  end)
+  reaper.PreventUIRefresh(-1)
+
+  if not restored then error(restore_error) end
+  if not saved then error(save_error) end
+  mixer_save_pending = false
+end
 
 local function request_monitor_mode(mode)
   local want_speaker = mode == "speaker" or mode == "both"
@@ -238,12 +396,7 @@ local function update_monitor_transition()
     -- The headphone output is now silent; mute its track to stop VSX processing.
     if not tr.want_vsx then reaper.SetMediaTrackInfo_Value(tr.vsx, "B_MUTE", 1) end
     monitor_transition = nil
-    -- Saving after the deferred fade must not change the user's selected project tab.
-    local selected_project = reaper.EnumProjects(-1)
-    reaper.Main_SaveProject(THIS_PROJECT, false)
-    if reaper.EnumProjects(-1) ~= selected_project then
-      reaper.SelectProjectInstance(selected_project)
-    end
+    queue_mixer_save()
   end
 end
 
@@ -391,11 +544,13 @@ local function process_mixing_control(controller, cc, cc_value)
   local actions = get_actions_by_value(controller, cc, cc_value)
   if actions == nil then return end
 
-  local current_project = reaper.EnumProjects(-1) -- To deal with the case where mixer project is in the background, remember the current project which isn't the mixer project, do stuff and then finally switch back
-  reaper.SelectProjectInstance(THIS_PROJECT)
-  
-  reaper.Undo_BeginBlock2(THIS_PROJECT)
-  reaper.PreventUIRefresh(1)
+  -- Both Undo_* calls and Main_SaveProject can affect the selected tab.
+  -- Modify the background mixer directly; use undo only if it is the active tab.
+  local mixer_is_active = reaper.EnumProjects(-1) == THIS_PROJECT
+  if mixer_is_active then
+    reaper.Undo_BeginBlock2(THIS_PROJECT)
+    reaper.PreventUIRefresh(1)
+  end
 
   local ok, control_error = pcall(function()
     for track_name, track_actions in pairs(actions) do
@@ -403,18 +558,12 @@ local function process_mixing_control(controller, cc, cc_value)
     end
   end)
 
-  -- Balance UI refresh and undo even if a track or FX is missing.
-  reaper.PreventUIRefresh(-1)
-  reaper.Undo_EndBlock2(THIS_PROJECT, SCRIPT_IDENTIFIER, -1)
-  reaper.TrackList_AdjustWindows(false)
-
-  -- Save every successful immediate action, even if the project was clean.
-  -- A running fade will save itself once it reaches the final state.
-  if ok and not monitor_transition then
-    reaper.Main_SaveProject(THIS_PROJECT, false)
+  if mixer_is_active then
+    reaper.PreventUIRefresh(-1)
+    reaper.Undo_EndBlock2(THIS_PROJECT, SCRIPT_IDENTIFIER, -1)
   end
 
-  reaper.SelectProjectInstance(current_project)
+  if ok then queue_mixer_save() end
   if not ok then error(control_error) end
 end
 
@@ -453,6 +602,18 @@ local function process_midi_messages(device_to_monitor, channel_to_monitor)
     if not ok then
       monitor_transition = nil
       reaper.SetExtState(SCRIPT_IDENTIFIER, "LastControlError", tostring(transition_error), false)
+    end
+
+    -- Save normally whenever the mixer tab is selected.
+    local saved, save_error = pcall(save_mixer_if_active)
+    if not saved then
+      reaper.SetExtState(SCRIPT_IDENTIFIER, "LastControlError", tostring(save_error), false)
+    end
+
+    -- Otherwise, save only after ten minutes away from REAPER.
+    local idle_saved, idle_save_error = pcall(save_mixer_if_idle)
+    if not idle_saved then
+      reaper.SetExtState(SCRIPT_IDENTIFIER, "LastControlError", tostring(idle_save_error), false)
     end
 
     reaper.defer(run_forever)

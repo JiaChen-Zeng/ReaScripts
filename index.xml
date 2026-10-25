@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Jiachen Scripts" commit="5c9f481ad4688c3321ec0107cbbb53e0fb8a6d44">
+<index version="1" name="Jiachen Scripts" commit="9a1ee36b38400dc8be98af712d19183346978108">
   <category name="Item">
     <reapack name="jiachen_Make selected tracks loopable within time selection.lua" type="script" desc="Make selected tracks loopable within time selection">
       <metadata>
@@ -30,6 +30,15 @@
       </version>
       <version name="1.0.5" author="Jiachen" time="2024-09-25T01:50:32Z">
         <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/be03068a5c2a4dc1b6a8184d920830a6cc68104a/Item/jiachen_Make%20selected%20tracks%20loopable%20within%20time%20selection.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="JSFX/ThirdParty/Saike">
+    <reapack name="SaikeMultiSpectralAnalyzer_zjc.jsfx" type="effect" desc="Saike Spectral Analyzer zjc (beta)">
+      <version name="5.0.42-zjc-0.1" author="Joep Vanlier, Trond-Viggo Melssen, Cockos, Feed The Cat" time="2026-10-25T08:18:15Z">
+        <changelog><![CDATA[zjc-0.1: TR5-inspired sonogram palette; independent embedded-UI 4x speed; original 4x speed preserved.]]></changelog>
+        <source>https://github.com/JiaChen-Zeng/ReaScripts/raw/668a0d0c2be944767faac17b61bfb56491372110/JSFX/ThirdParty/Saike/SaikeMultiSpectralAnalyzer_zjc.jsfx</source>
+        <source file="colormaps.jsfx-inc">https://github.com/JiaChen-Zeng/ReaScripts/raw/668a0d0c2be944767faac17b61bfb56491372110/JSFX/ThirdParty/Saike/colormaps.jsfx-inc</source>
       </version>
     </reapack>
   </category>
@@ -106,6 +115,36 @@ Test the link to my repo
       </version>
       <version name="1.4.0" author="Jiachen" time="2025-06-01T09:22:59Z">
         <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/85d76c7cea42c85169fc87d34a17db87b5367399/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
+      </version>
+      <version name="1.4.7" author="Jiachen" time="2026-10-23T13:41:19Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/b9c4f522c08dd9f1412d2b6ac8c23f328da68c85/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
+      </version>
+      <version name="1.4.8" author="Jiachen" time="2026-10-23T13:58:18Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/8ae364c7a54490e91f4304fb5a42a29a39a0bc3e/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
+      </version>
+      <version name="1.5.0" author="Jiachen" time="2026-10-23T15:20:13Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/77973f973e1ddf2ef597cdd8f6cb814c1367ad36/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
+      </version>
+      <version name="1.5.1" author="Jiachen" time="2026-10-23T15:39:49Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/0cf27172c1d53bc28e10cc06e0db2d8a6566a5c0/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
+      </version>
+      <version name="1.8.0" author="Jiachen" time="2026-10-24T01:37:55Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/fe3f36b2b4106678f8b0dd2ed5568bdecdb62c24/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
+      </version>
+      <version name="1.8.1" author="Jiachen" time="2026-10-24T02:32:19Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/b1bdcb6ee121ae1ad4e1bdaace9e914c44ec89f5/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
+      </version>
+      <version name="1.8.2" author="Jiachen" time="2026-10-24T02:34:11Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/9f3c7a6aa13c451ee05fb280d169492d0af7ee1b/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
+      </version>
+      <version name="1.8.3" author="Jiachen" time="2026-10-24T02:47:24Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/586a33f6cccfa54411a1c674e3d052c0ce5963c4/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
+      </version>
+      <version name="1.8.4" author="Jiachen" time="2026-10-25T06:40:32Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/588735d8a06b961d6c06a67b70b6d387f849abd5/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
+      </version>
+      <version name="1.8.9" author="Jiachen" time="2026-10-25T08:20:42Z">
+        <source main="main">https://github.com/JiaChen-Zeng/ReaScripts/raw/9a1ee36b38400dc8be98af712d19183346978108/System/jiachen_Mixer%20MIDI%20Controller.lua</source>
       </version>
     </reapack>
     <reapack name="jiachen_VST Evaluation Resetter.lua" type="script" desc="VST Evaluation Resetter">

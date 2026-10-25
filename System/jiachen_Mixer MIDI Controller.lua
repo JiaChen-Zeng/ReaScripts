@@ -1,6 +1,6 @@
 -- @description MIDI Mixer Controller
 -- @author Jiachen
--- @version 1.8.3
+-- @version 1.8.4
 
 -- Current mixer layout (documentation only; no FX index/order locking):
 -- Global Monitoring FX: [0] TR5 Metering, [1] TDR Prism,
@@ -238,7 +238,12 @@ local function update_monitor_transition()
     -- The headphone output is now silent; mute its track to stop VSX processing.
     if not tr.want_vsx then reaper.SetMediaTrackInfo_Value(tr.vsx, "B_MUTE", 1) end
     monitor_transition = nil
+    -- Saving after the deferred fade must not change the user's selected project tab.
+    local selected_project = reaper.EnumProjects(-1)
     reaper.Main_SaveProject(THIS_PROJECT, false)
+    if reaper.EnumProjects(-1) ~= selected_project then
+      reaper.SelectProjectInstance(selected_project)
+    end
   end
 end
 

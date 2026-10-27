@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="Jiachen Scripts" commit="17cee9517ccf0878435f97a0a25a9449b8758b33">
+<index version="1" name="Jiachen Scripts" commit="a0b907e20535dfe9ee919414438ed84e168ef286">
   <category name="Item">
     <reapack name="jiachen_Make selected tracks loopable within time selection.lua" type="script" desc="Make selected tracks loopable within time selection">
       <metadata>
@@ -34,7 +34,7 @@
     </reapack>
   </category>
   <category name="JSFX/ThirdParty/Saike">
-    <reapack name="SaikeBandSplitter_zjc.jsfx" type="effect" desc="Saike 4-pole BandSplitter zjc (beta)">
+    <reapack name="SaikeBandSplitter_zjc.jsfx" type="effect" desc="Saike 4-pole BandSplitter zjc">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}

@@ -2,7 +2,11 @@ desc:Saike Spectral Analyzer zjc (beta)
 tags: analysis FFT meter spectrum
 version: 5.0.42-zjc-0.1
 author: Joep Vanlier, Trond-Viggo Melssen, Cockos, Feed The Cat
-changelog: zjc-0.1: TR5-inspired sonogram palette; independent embedded-UI 4x speed; original 4x speed preserved.
+changelog: zjc-0.1: TR5-inspired sonogram palette; independent embedded-UI 4x speed; original 4x speed preserved; FPS-independent embedded sonogram scrolling.
+// Embedded MCP/TCP sonogram: time_precise() controls 30 columns/s (normal) or
+// 120 columns/s (4x), independent of the host GUI update rate.
+// Floating FX window retains the original FFT and sonogram update branches.
+// No options:gfx_hz override or change to full-window rendering workload.
 provides: colormaps.jsfx-inc
 Copyright (C) 2007 Cockos Incorporated
 Copyright (C) 2018 Joep Vanlier, Trond-Viggo Melssen
@@ -92,6 +96,9 @@ options:gmem=saike_spectrum_analyzer
 lastIntegrate = -1;
 sono_sample = 0;
 last_sono_sample = 0;
+sono_last_time = 0;
+sono_last_mode = -1;
+sono_fraction = 0;
 version = 2;
 chNames = 900;
 chNames2 = 916;
@@ -672,6 +679,11 @@ lastIntegrate = maxIntegrate;
 initCh();
 updateChannelSliders();
 micro_view = gfx_ext_flags & 1;
+micro_view && slider29 != 0 ? (
+  sono_last_time = 0;
+  sono_fraction = 0;
+  last_sono_sample = 0;
+);
 scaling = slider6;
 gfx_ext_retina > 1 ? gfx_setfont(1, "Arial", (font_scaling + 1) * max(12, 13 * gfx_ext_retina), 'b') : gfx_setfont(0);
 
@@ -3461,29 +3473,75 @@ mouse_cap > 0 ? (
     
     cmapidx = (floor(slider32/2) + 1);
     invert = slider32 - (floor(slider32/2))*2;
+    // The embedded MCP/TCP view uses elapsed time; full FX uses original code.
+    micro_view ? (
+      sono_fast = (fast_proc || slider64) ? 1 : 0;
+      sono_rate = sono_fast ? 120 : 30;
+      sono_now = time_precise();
+      sono_dt = sono_now - sono_last_time;
+      (sono_last_time > 0 && sono_last_mode == sono_fast &&
+       sono_dt >= 0 && sono_dt <= 0.25) ? (
+        sono_fraction += sono_dt * sono_rate;
+        sono_columns = floor(sono_fraction + 0.000001);
+        sono_fraction = max(0, sono_fraction - sono_columns);
+      ) : (
+        sono_fraction = 0;
+        sono_columns = sono_fast ? 4 : 1;
+        last_sono_sample = 0;
+      );
+      sono_last_time = sono_now;
+      sono_last_mode = sono_fast;
+      slider44 ? (
+        sono_columns = 0;
+        sono_fraction = 0;
+        last_sono_sample = sono_sample;
+      );
+    );
     ( selected > -1 ) ? (
-      (fast_proc || (slider64 && micro_view)) ? (
-        last_sono_sample ? (
-          sono_step = (sono_sample - last_sono_sample) / 4;
-          ixx = - 4 * sono_step;
-          loop(4,
-            // Make sure that the sonogram is still updated if it's not currently being rendered.
-            processFFT(recpositions[selected] + ixx, fftworkspaces[selected], integrate_bufs[selected], shifts[selected], histsizes[selected], ccolor[0], ccolor[1], ccolor[2], 1, 0);
-            /* TO DO MAKE SONO WORK IN DIFF MODE */
-              
-            ixx += sono_step;
+      micro_view ? (
+        sono_columns > 0 ? (
+          (sono_fast || sono_columns > 1) ? (
+            last_sono_sample ? (
+              sono_step = (sono_sample - last_sono_sample) / sono_columns;
+              ixx = -sono_columns * sono_step;
+              loop(sono_columns,
+                processFFT(recpositions[selected] + ixx, fftworkspaces[selected], integrate_bufs[selected], shifts[selected], histsizes[selected], ccolor[0], ccolor[1], ccolor[2], 1, 0);
+                ixx += sono_step;
+                sonogram.updateSono(fftworkspaces[selected], cmapidx * 1000, invert, slider30, slider33, slider35);
+              );
+            );
+          ) : (
+            (activeChannels[selected] == 0 || hide_spectrum) ? (
+              processFFT(recpositions[selected], fftworkspaces[selected], integrate_bufs[selected], shifts[selected], histsizes[selected], ccolor[0], ccolor[1], ccolor[2], 1, 0);
+            );
             sonogram.updateSono(fftworkspaces[selected], cmapidx * 1000, invert, slider30, slider33, slider35);
           );
+          last_sono_sample = sono_sample;
         );
-        last_sono_sample = sono_sample;
       ) : (
-        // Make sure that the sonogram is still updated if it's not currently being rendered.
-        (activeChannels[selected] == 0 || hide_spectrum) ? (
-          processFFT(recpositions[selected], fftworkspaces[selected], integrate_bufs[selected], shifts[selected], histsizes[selected], ccolor[0], ccolor[1], ccolor[2], 1, 0);
+        (fast_proc || (slider64 && micro_view)) ? (
+          last_sono_sample ? (
+            sono_step = (sono_sample - last_sono_sample) / 4;
+            ixx = - 4 * sono_step;
+            loop(4,
+              // Make sure that the sonogram is still updated if it's not currently being rendered.
+              processFFT(recpositions[selected] + ixx, fftworkspaces[selected], integrate_bufs[selected], shifts[selected], histsizes[selected], ccolor[0], ccolor[1], ccolor[2], 1, 0);
+              /* TO DO MAKE SONO WORK IN DIFF MODE */
+
+              ixx += sono_step;
+              sonogram.updateSono(fftworkspaces[selected], cmapidx * 1000, invert, slider30, slider33, slider35);
+            );
+          );
+          last_sono_sample = sono_sample;
+        ) : (
+          // Make sure that the sonogram is still updated if it's not currently being rendered.
+          (activeChannels[selected] == 0 || hide_spectrum) ? (
+            processFFT(recpositions[selected], fftworkspaces[selected], integrate_bufs[selected], shifts[selected], histsizes[selected], ccolor[0], ccolor[1], ccolor[2], 1, 0);
+          );
+          sonogram.updateSono(fftworkspaces[selected], cmapidx * 1000, invert, slider30, slider33, slider35);
         );
-        sonogram.updateSono(fftworkspaces[selected], cmapidx * 1000, invert, slider30, slider33, slider35);
+
       );
-      
       sonogram.drawSono(cmapidx * 1000, invert, slider30, slider33, slider35);
       
       gfx_mode = 1;
@@ -3494,28 +3552,51 @@ mouse_cap > 0 ? (
 //      gfx_printf( "Ch: %d, Sc: %d", selected + 1, slider30 );
       !micro_view ? gfx_printf(" %d", selected + 1);
     ) : (
-      (fast_proc || (slider64 && micro_view)) ? (
-        last_sono_sample ? (
-          sono_step = (sono_sample - last_sono_sample) / 4;
-          ixx = - 4 * sono_step;
-          loop(4,
-            // Make sure that the sonogram is still updated if it's not currently being rendered.
-            processFFT(sumposr + ixx, fftwr, ibufr, sumshr, sumhsr, halfshade, halfshade, halfshade, 0, 0);  
-            /* TO DO MAKE SONO WORK IN DIFF MODE */
-              
-            ixx += sono_step;
+      micro_view ? (
+        sono_columns > 0 ? (
+          (sono_fast || sono_columns > 1) ? (
+            last_sono_sample ? (
+              sono_step = (sono_sample - last_sono_sample) / sono_columns;
+              ixx = -sono_columns * sono_step;
+              loop(sono_columns,
+                processFFT(sumposr + ixx, fftwr, ibufr, sumshr, sumhsr, halfshade, halfshade, halfshade, 0, 0);
+                ixx += sono_step;
+                sonogram.updateSono(fftwr, cmapidx * 1000, invert, slider30, slider33, slider35);
+              );
+            );
+          ) : (
+            ((showSum == 0) || (displayMode == 1) || hide_spectrum) ? (
+              processFFT(sumposr, fftwr, ibufr, sumshr, sumhsr, halfshade, halfshade, halfshade, 0, 0);
+              processFFT(sumposl, fftwl, ibufl, sumshl, sumhsl, shade, shade, shade, 0, 0);
+            );
             sonogram.updateSono(fftwr, cmapidx * 1000, invert, slider30, slider33, slider35);
           );
+          last_sono_sample = sono_sample;
         );
-        last_sono_sample = sono_sample;
       ) : (
-        ( (showSum == 0) || (displayMode == 1) || hide_spectrum ) ? (
-          // Make sure that the sonogram is still updated if it's not currently being rendered.
-          processFFT(sumposr, fftwr, ibufr, sumshr, sumhsr, halfshade, halfshade, halfshade, 0, 0);  
-          processFFT(sumposl, fftwl, ibufl, sumshl, sumhsl, shade, shade, shade, 0, 0);
-          /* TO DO MAKE SONO WORK IN DIFF MODE */
+        (fast_proc || (slider64 && micro_view)) ? (
+          last_sono_sample ? (
+            sono_step = (sono_sample - last_sono_sample) / 4;
+            ixx = - 4 * sono_step;
+            loop(4,
+              // Make sure that the sonogram is still updated if it's not currently being rendered.
+              processFFT(sumposr + ixx, fftwr, ibufr, sumshr, sumhsr, halfshade, halfshade, halfshade, 0, 0);
+              /* TO DO MAKE SONO WORK IN DIFF MODE */
+
+              ixx += sono_step;
+              sonogram.updateSono(fftwr, cmapidx * 1000, invert, slider30, slider33, slider35);
+            );
+          );
+          last_sono_sample = sono_sample;
+        ) : (
+          ( (showSum == 0) || (displayMode == 1) || hide_spectrum ) ? (
+            // Make sure that the sonogram is still updated if it's not currently being rendered.
+            processFFT(sumposr, fftwr, ibufr, sumshr, sumhsr, halfshade, halfshade, halfshade, 0, 0);
+            processFFT(sumposl, fftwl, ibufl, sumshl, sumhsl, shade, shade, shade, 0, 0);
+            /* TO DO MAKE SONO WORK IN DIFF MODE */
+          );
+          sonogram.updateSono(fftwr, cmapidx * 1000, invert, slider30, slider33, slider35 );
         );
-        sonogram.updateSono(fftwr, cmapidx * 1000, invert, slider30, slider33, slider35 );
       );
       sonogram.drawSono(cmapidx * 1000, invert, slider30, slider33, slider35);
       

@@ -15,6 +15,10 @@ desc: Goniometer zjc (Tukan)
 //   * Non-overlapping history storage and bitmap GUI scratch memory.
 //   * Skip invalid first segment in Lines visualization mode.
 //   * Remove unused, unbounded JSFX memory writes.
+//   * Normalize trail fade with time_precise() using
+//     pow(slider7, 30 * elapsed_seconds), preserving 30-FPS decay speed.
+//     The same fade applies in embedded and floating FX views; no gfx_hz override.
+//     Audio history/redraw, freeze handling, and glow passes remain original.
 //
 // Preserved from original: correlation and silence handling, indicator smoothing,
 // slider defaults, bitmap GUI, MCP presentation, persistence and 3 blur passes.
@@ -576,7 +580,8 @@ filename:2,Scopegui/APIBig.png
     // the display is "frozen".
     (freeze != 1 && stopped != 1) ?
     (
-      dim = slider7;//(glow == 1 ? 0.925 : 0.98);
+      // Match the original per-frame dim at 30 FPS at any host refresh rate.
+      dim = pow(slider7, 30 * gfx_elapsed);
       gfx_muladdrect(0,0,gfx_w,gfx_h, dim, dim, dim);
     );
     
@@ -671,6 +676,7 @@ filename:2,Scopegui/APIBig.png
   gfx_rectto(gfx_w,gfx_h)
   );
   gfx_clear=-1;
+  gfx_last_time = 0; // Real-time trail fade reference for @gfx.
   p=$PI/180;
   c=1;
   s=0;
@@ -726,6 +732,10 @@ decay*=slider7*4;
 Indicor=Indicor-(Indicor-corr)*decay;
 
 @gfx 479 434
+  // Both embedded and floating views use the same elapsed-time fade.
+  gfx_now = time_precise();
+  gfx_elapsed = gfx_last_time > 0 ? max(0, gfx_now - gfx_last_time) : (1 / 30);
+  gfx_last_time = gfx_now;
   
   // Switch to main drawing context
   gfx_dest  = -1;

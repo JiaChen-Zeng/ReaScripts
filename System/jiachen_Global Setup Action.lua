@@ -14,6 +14,8 @@ function main()
   -- Run "Script: jiachen_VST Evaluation Resetter.lua"
   -- local resetter_cmd_id = reaper.NamedCommandLookup("_RSdaf98a2af5fff4266a0a459ce9b624e678581a3b")
   -- reaper.Main_OnCommand(resetter_cmd_id, 0)
+
+  dofile(reaper.GetResourcePath() .. "/Scripts/Jiachen Scripts/System/Auto Light Color/jiachen_Auto Light Color Startup.lua")
 end
 
 main()
